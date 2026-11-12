@@ -1,0 +1,51 @@
+# ---- 非公開メモ ----
+/Docs/00_Memo/
+
+# ---- Assets: パッケージ本体だけ追跡する ----
+/Assets/*
+!/Assets/Yakimannzyuu/
+!/Assets/Yakimannzyuu.meta
+/Assets/Yakimannzyuu/*
+!/Assets/Yakimannzyuu/YakimaTank/
+!/Assets/Yakimannzyuu/YakimaTank.meta
+
+# ---- VCC が復元するパッケージ ----
+/Packages/com.vrchat.*/
+
+# ---- Unity が生成するもの ----
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Bb]uild/
+/[Bb]uilds/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/ClientSimStorage/
+*.csproj
+*.sln
+*.suo
+*.user
+*.pidb
+*.userprefs
+.vs/
+*.unitypackage
+
+# ---- agent-kickoff 由来 ----
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+.claude/skills/
+CLAUDE.local.md
+
+# ---- OS / エディタ ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+*.swp
+*~
+.vscode/*
+!.vscode/extensions.json

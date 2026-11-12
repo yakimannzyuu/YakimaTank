@@ -1,0 +1,11 @@
+{
+  "name": "com.yakimannzyuu.yakimatank",
+  "displayName": "YakimaTank",
+  "version": "0.0.1",
+  "unity": "2022.3",
+  "description": "VRChat 向け戦車用 Udon ギミック",
+  "author": { "name": "Yakimannzyuu", "url": "https://github.com/yakimannzyuu" },
+  "license": "MIT",
+  "vpmDependencies": { "com.vrchat.worlds": ">=3.10.0" },
+  "legacyFolders": {}
+}

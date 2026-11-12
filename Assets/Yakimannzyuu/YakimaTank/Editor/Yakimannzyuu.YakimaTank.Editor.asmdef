@@ -1,0 +1,23 @@
+{
+    "name": "Yakimannzyuu.YakimaTank.Editor",
+    "rootNamespace": "Yakimannzyuu.YakimaTank.Editor",
+    "references": [
+        "Yakimannzyuu.YakimaTank",
+        "UdonSharp.Editor",
+        "UdonSharp.Runtime",
+        "VRC.SDK3",
+        "VRC.SDKBase",
+        "VRC.Udon"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
