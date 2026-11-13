@@ -46,6 +46,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         /// <summary>車両の下の床の高さの違いの上限（m）。段差や台の上に置かないため。</summary>
         private const float MaxFloorStep = 0.3f;
+
         private const string UdonSharpPrefabLinkPath = "serializationData.Prefab";
 
         public static string ContainerName(string placementId)
