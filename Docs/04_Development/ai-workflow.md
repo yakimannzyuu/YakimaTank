@@ -78,6 +78,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Assets/YakimaTankDev/DevTool
 | `update-world` | `{"settings":"…","scene":"Assets/…/x.unity","template":"Assets/Scenes/VRCDefaultWorldScene.unity"}` | 対象シーン・配置 ID・変更の一覧 |
 | `build-world` | `{"scene":"…","platform":"StandaloneWindows64"}` | SDK の検証とローカルビルドの結果、成果物の場所とハッシュ |
 | `ensure-program-assets` | なし | 作った program asset |
+| `apply-clientsim-audio` | なし | ClientSim が求める音の設定だけを合わせた結果と、変わった ProjectSettings。プラグインがなければ環境の問題として止める |
 
 - 任意の C# の実行・任意の Hierarchy の編集・アップロードは、操作にない。
 - 結果には、コード・設定・モデルの依存・シーン・生成物・ビルド対象の内容のハッシュが付く。報告では要求 ID とハッシュで、どの入力の結果かを示す。

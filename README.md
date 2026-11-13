@@ -57,6 +57,7 @@ Git に入れるのは、`Assets/` の下では `Assets/Yakimannzyuu/YakimaTank/
 
 ## 最近の更新
 
+- 0.1.0：走行（前進・後退・旋回・制動）と、セットアップウィンドウでの生成・シーンへの配置・Play 中の調整
 - 0.0.1：パッケージの雛形
 
 変更の一覧は [CHANGELOG.md](Assets/Yakimannzyuu/YakimaTank/CHANGELOG.md) にあります。
