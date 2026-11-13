@@ -42,10 +42,19 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         private const float PositionTolerance = 0.001f;
         private const float AngleTolerance = 0.01f;
+        private const float ScaleTolerance = 0.001f;
         private const int PlacementAttempts = 6;
 
         /// <summary>車両の下の床の高さの違いの上限（m）。段差や台の上に置かないため。</summary>
         private const float MaxFloorStep = 0.3f;
+
+        /// <summary>
+        /// 床を探し始める、Spawn からの高さ（m）。これより高い面は、天井・屋根・上の階とみなして床にしない。
+        /// 高い所から探すと、屋内では屋根の上面に先に当たり、屋根の上に置いてしまう。
+        /// </summary>
+        private const float FloorSearchAbove = 2f;
+
+        private const float FloorSearchBelow = 150f;
 
         private const string UdonSharpPrefabLinkPath = "serializationData.Prefab";
 
@@ -192,6 +201,11 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 }
             }
 
+            if (!IsSameScale(container.lossyScale, Vector3.one))
+            {
+                conflicts.Add($"入れ物の大きさ {container.lossyScale} が 1 倍ではありません。");
+            }
+
             if (container.GetComponents<Component>().Length != 1)
             {
                 conflicts.Add("入れ物にコンポーネントが足されています。");
@@ -214,6 +228,11 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 Quaternion.Angle(instance.transform.localRotation, Quaternion.identity) > AngleTolerance)
             {
                 conflicts.Add($"{instance.name} が入れ物の中で動かされています。");
+            }
+
+            if (!IsSameScale(instance.transform.localScale, prefab.transform.localScale))
+            {
+                conflicts.Add($"{instance.name} の大きさ {instance.transform.localScale} が、生成 Prefab の {prefab.transform.localScale} と違います。");
             }
 
             PropertyModification[] modifications = PrefabUtility.GetPropertyModifications(instance) ?? new PropertyModification[0];
@@ -241,6 +260,16 @@ namespace Yakimannzyuu.YakimaTank.Editor
             {
                 conflicts.Add("消したコンポーネントがあります: " + Describe(removed.assetComponent));
             }
+
+            foreach (var removed in PrefabUtility.GetRemovedGameObjects(instance))
+            {
+                conflicts.Add("消したオブジェクトがあります: " + Describe(removed.assetGameObject));
+            }
+        }
+
+        private static bool IsSameScale(Vector3 scale, Vector3 expected)
+        {
+            return (scale - expected).sqrMagnitude <= ScaleTolerance * ScaleTolerance;
         }
 
         /// <summary>
@@ -349,7 +378,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private static bool TryFindFloor(PhysicsScene physics, Vector3 candidate, out RaycastHit floor)
         {
             var hits = new RaycastHit[16];
-            int count = physics.Raycast(candidate + Vector3.up * 50f, Vector3.down, hits, 200f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            int count = physics.Raycast(candidate + Vector3.up * FloorSearchAbove, Vector3.down, hits, FloorSearchAbove + FloorSearchBelow,
+                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
             floor = hits.Take(count).OrderBy(hit => hit.distance).FirstOrDefault();
             return count > 0;
         }

@@ -137,6 +137,20 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void Spawnの上に屋根があっても屋根の上ではなくSpawnと同じ高さの床に置く()
+        {
+            GameObject roof = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            roof.name = "Roof";
+            roof.transform.position = new Vector3(0f, 4f, 0f);
+            roof.transform.localScale = new Vector3(60f, 0.5f, 60f);
+
+            PlacementResult result = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(result.Succeeded, Is.True, result.Error);
+            Assert.That(_settings.placementPosition.y, Is.InRange(0f, 1f), "床の上（屋根の上面は 4.25 m）");
+        }
+
+        [Test]
         public void 入れ物の中が生成Prefabのインスタンスでなければ変えずに止める()
         {
             PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
@@ -218,6 +232,33 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void 入れ物の大きさが手で変えられていたら変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            container.localScale = Vector3.one * 2f;
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("大きさ")), Is.True, string.Join(" / ", second.Conflicts));
+            Assert.That(container.localScale, Is.EqualTo(Vector3.one * 2f));
+        }
+
+        [Test]
+        public void 車両の大きさが手で変えられていたら変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            first.Instance.transform.localScale = Vector3.one * 2f;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(first.Instance.transform);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("大きさ")), Is.True, string.Join(" / ", second.Conflicts));
+        }
+
+        [Test]
         public void インスタンスに手で加えた変更があれば変えずに止める()
         {
             PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
@@ -230,6 +271,20 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(second.Succeeded, Is.False);
             Assert.That(second.Conflicts.Any(c => c.Contains("手で変えた")), Is.True);
             Assert.That(wheel.radius, Is.EqualTo(1.5f));
+        }
+
+        [Test]
+        public void インスタンスから手で消したオブジェクトがあれば変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform turret = first.Instance.transform.Find(YakimaTankSetupService.ModelName + "/Hull/Turret");
+            Assert.That(turret, Is.Not.Null, "消す対象がない（判定にならない）");
+            Object.DestroyImmediate(turret.gameObject);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("消したオブジェクト")), Is.True, string.Join(" / ", second.Conflicts));
         }
 
         [Test]
