@@ -11,6 +11,8 @@
 
 # ---- VCC が復元するパッケージ ----
 /Packages/com.vrchat.*/
+# 開発用（テスト）。版は vpm-manifest.json、取得元は Docs/04_Development/ai-workflow.md
+/Packages/com.tsvrc.udon-test-kit/
 
 # ---- Unity が生成するもの ----
 /[Ll]ibrary/
