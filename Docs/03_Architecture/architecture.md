@@ -83,8 +83,9 @@ sequenceDiagram
 | `YakimaTankSetupService` | Editor | 生成。ウィンドウと連携が共用する |
 | `YakimaTankScenePlacement` | Editor | シーンへの配置。手の変更があれば変えずに止める |
 | `YakimaTankPlayTuning` | Editor | Play 中の再適用・出し直し・作業値の保存 |
+| `YakimaTankWorkingValues` | Editor | Play 中の作業値。作った元の設定と組にし、設定が替われば作り直す |
 | `YakimaTankRuntimeValues` | Editor | 設定と車両の Udon で同じ名前の走行の値 |
-| `YakimaTankModelPaths` | Editor | モデルの中の階層パス（同じ名前の兄弟は番号つき） |
+| `YakimaTankModelPaths` | Editor | モデルの中の階層パス（同じ名前の兄弟は番号つき。名前の中の `\` `/` `[` `]` はエスケープ） |
 | `YakimaTankBounds` | Editor | メッシュの範囲（SkinnedMeshRenderer はルートのボーンの座標） |
 | `YakimaTankSetupMath` | Editor | 転輪の半径・位置、サスペンションの自動の値 |
 | `YakimaTankModelInspector` | Editor | モデルを読むだけで、階層・範囲・軸・名前からの候補を返す（連携の `inspect-model`） |
