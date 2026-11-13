@@ -1,7 +1,9 @@
 using System.Linq;
 using NUnit.Framework;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Yakimannzyuu.YakimaTank.Editor.Tests
 {
@@ -49,6 +51,43 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             string path = YakimaTankModelPaths.GetPath(wheel, _model.transform);
             Assert.That(YakimaTankModelPaths.TryResolve(_model.transform, path, out Transform resolved, out _), Is.True);
             Assert.That(resolved, Is.SameAs(wheel));
+        }
+
+        [TestCase("Wheel[0]")]
+        [TestCase("Left/Wheel")]
+        [TestCase(@"Back\Slash")]
+        [TestCase("]Wheel[")]
+        public void 名前に予約文字があってもパスは同じTransformに戻る(string name)
+        {
+            Scene preview = EditorSceneManager.NewPreviewScene();
+            try
+            {
+                Transform Node(string nodeName, Transform parent)
+                {
+                    Transform node = ObjectFactory.CreateGameObject(preview, HideFlags.None, nodeName).transform;
+                    node.SetParent(parent, false);
+                    return node;
+                }
+
+                Transform root = Node("Root", null);
+                Node("Wheel", root);
+                Node("Left", root);
+                Node("Child", Node(name, root));
+                Transform duplicates = Node("Duplicates", root);
+                Node(name, duplicates);
+                Node(name, duplicates);
+
+                foreach (Transform node in root.GetComponentsInChildren<Transform>(true).Where(t => t != root))
+                {
+                    string path = YakimaTankModelPaths.GetPath(node, root);
+                    Assert.That(YakimaTankModelPaths.TryResolve(root, path, out Transform resolved, out string error), Is.True, path + ": " + error);
+                    Assert.That(resolved, Is.SameAs(node), path);
+                }
+            }
+            finally
+            {
+                EditorSceneManager.ClosePreviewScene(preview);
+            }
         }
 
         [Test]
