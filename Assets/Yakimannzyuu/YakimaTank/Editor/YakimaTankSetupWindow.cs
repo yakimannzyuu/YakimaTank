@@ -28,7 +28,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         [SerializeField] private YakimaTankSetupSettings settings;
         [SerializeField] private Vector2 scroll;
-        private YakimaTankSetupSettings _working;
+        private readonly YakimaTankWorkingValues _working = new YakimaTankWorkingValues();
         private UdonBehaviour _target;
         private readonly List<string> _messages = new List<string>();
 
@@ -40,19 +40,15 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         private void OnDisable()
         {
-            if (_working != null)
-            {
-                DestroyImmediate(_working);
-            }
+            _working.Discard();
         }
 
         private void OnGUI()
         {
-            if (!EditorApplication.isPlaying && _working != null)
+            if (!EditorApplication.isPlaying)
             {
                 // 作業値は Play ごと。抜けたら捨てる（保存していない値を次の Play に持ち越さない）。
-                DestroyImmediate(_working);
-                _working = null;
+                _working.Discard();
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
@@ -246,12 +242,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         {
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Play 中の調整（作業値。保存するまで設定には書かない）", EditorStyles.boldLabel);
-            if (_working == null)
-            {
-                _working = Instantiate(settings);
-                _working.hideFlags = HideFlags.DontSave;
-            }
-
+            YakimaTankSetupSettings working = _working.For(settings);
             UdonBehaviour[] vehicles = FindObjectsOfType<UdonBehaviour>()
                 .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankVehicle))
                 .ToArray();
@@ -265,7 +256,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             current = EditorGUILayout.Popup("対象の車両", current, vehicles.Select(v => v.gameObject.name).ToArray());
             _target = vehicles[current];
 
-            var serialized = new SerializedObject(_working);
+            var serialized = new SerializedObject(working);
             serialized.Update();
             foreach (string name in RuntimeFieldNames)
             {
@@ -276,20 +267,20 @@ namespace Yakimannzyuu.YakimaTank.Editor
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("再適用"))
             {
-                YakimaTankPlayTuning.Reapply(_target, _working);
+                YakimaTankPlayTuning.Reapply(_target, working);
             }
 
             if (GUILayout.Button("出し直し"))
             {
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(settings.outputPrefabPath);
                 GameObject root = _target.gameObject;
-                GameObject respawned = YakimaTankPlayTuning.Respawn(root, prefab, _working);
+                GameObject respawned = YakimaTankPlayTuning.Respawn(root, prefab, working);
                 _target = YakimaTankRuntimeValues.FindVehicle(respawned);
             }
 
             if (GUILayout.Button("作業値を設定に保存"))
             {
-                YakimaTankPlayTuning.SaveWorkingValues(_working, settings);
+                YakimaTankPlayTuning.SaveWorkingValues(working, settings);
                 _messages.Clear();
                 _messages.Add("作業値を設定に保存しました: " + AssetDatabase.GetAssetPath(settings));
             }
