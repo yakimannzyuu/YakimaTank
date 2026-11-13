@@ -87,6 +87,7 @@ sequenceDiagram
 | `YakimaTankModelPaths` | Editor | モデルの中の階層パス（同じ名前の兄弟は番号つき） |
 | `YakimaTankBounds` | Editor | メッシュの範囲（SkinnedMeshRenderer はルートのボーンの座標） |
 | `YakimaTankSetupMath` | Editor | 転輪の半径・位置、サスペンションの自動の値 |
+| `YakimaTankModelInspector` | Editor | モデルを読むだけで、階層・範囲・軸・名前からの候補を返す（連携の `inspect-model`） |
 | `TestWorkspace` | Tests/Editor | テストの一時フォルダと、立方体と円柱のモデル |
 | `YakimaTankDriveTestBase` | Tests/Runtime | 走行の判定（PlayMode・ClientSim）。生成物ごとに派生させる |
 

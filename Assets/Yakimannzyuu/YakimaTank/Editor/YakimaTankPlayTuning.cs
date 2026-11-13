@@ -25,7 +25,6 @@ namespace Yakimannzyuu.YakimaTank.Editor
             vehicle.SendCustomEvent(nameof(YakimaTankVehicle._ApplySettingsAndReset));
         }
 
-        /// <summary>今の車両を消し、同じ構造の車両を、前の車両が最初に置かれた位置に出し直す。新しい車両のルートを返す。</summary>
         public static GameObject Respawn(GameObject current, GameObject prefab, YakimaTankSetupSettings values)
         {
             RequirePlaying();
@@ -84,7 +83,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
         }
 
-        /// <summary>作業値を設定アセットに保存する。明示的に呼んだときだけ（Play を抜けても自動では保存しない）。</summary>
+        // Play を抜けても自動では保存しない。試した値を残すかは利用者が決める。
         public static void SaveWorkingValues(YakimaTankSetupSettings working, YakimaTankSetupSettings asset)
         {
             Undo.RecordObject(asset, "YakimaTank の作業値を保存");

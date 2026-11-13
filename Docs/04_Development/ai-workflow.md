@@ -123,3 +123,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File Assets/YakimaTankDev/DevTool
 - 開発用の依存。版は `Packages/vpm-manifest.json`（1.1.0）。本体（`Packages/com.tsvrc.udon-test-kit/`）は Git に入れない。
 - 取得元：TsVRC の VPM リポジトリ（[導入の手順](https://tsvrc.com/docs/install-a-package)）または [GitHub の Releases](https://github.com/tsvrc/udon-test-kit/releases)。VCC にリポジトリを足してから Resolve すると戻る。
 - Kit を使うテストの asmdef は、Kit があるときだけコンパイルされる（`versionDefines` と `defineConstraints`）。Kit のない導入先でも製品はコンパイルできる。
+- ClientSim の中の PlayMode テストは、ClientSim のプロジェクト設定の確認が通っていないと失敗する。このリポジトリでは `ProjectSettings/AudioManager.asset` の空間化と Ambisonic のデコーダーを `OculusSpatializer`（VRChat SDK に同梱）にしてある。ほかのプロジェクトで流すときは、Kit のメニュー（Tools → TsVRC → Udon Test Kit → Fix ClientSim Project Settings）で合わせる。

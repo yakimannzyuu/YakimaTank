@@ -135,7 +135,6 @@ namespace Yakimannzyuu.YakimaTank
             body.angularVelocity = body.angularVelocity + up * ((turnRate - yawRate) * Mathf.Deg2Rad);
         }
 
-        /// <summary>全輪の合計の駆動トルク。進む向きの最高速度に達したら 0、逆へ動いている間は 0（先に止める）。</summary>
         public static float CalculateDriveTorque(float throttle, float forwardSpeed, float driveTorque, float maxForwardSpeed, float maxReverseSpeed)
         {
             if (throttle > InputDeadZone)
@@ -161,7 +160,6 @@ namespace Yakimannzyuu.YakimaTank
             return 0f;
         }
 
-        /// <summary>全輪の合計のブレーキトルク。ブレーキ入力・逆向きの入力・何も入力していない間に掛ける。</summary>
         public static float CalculateBrakeTorque(float throttle, float steer, float brake, float forwardSpeed, float brakeTorque, float idleBrakeTorque)
         {
             float result = Mathf.Clamp01(brake) * brakeTorque;
@@ -181,7 +179,6 @@ namespace Yakimannzyuu.YakimaTank
             return result;
         }
 
-        /// <summary>次の上向きの角速度（度/秒）。steer × 最高角速度へ、角加速度で近づける。</summary>
         public static float CalculateYawRate(float currentYawRate, float steer, float maxTurnRate, float turnAcceleration, float deltaTime)
         {
             float target = Mathf.Clamp(steer, -1f, 1f) * maxTurnRate;
