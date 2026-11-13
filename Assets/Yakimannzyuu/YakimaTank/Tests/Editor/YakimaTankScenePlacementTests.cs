@@ -1,10 +1,13 @@
+using System.Collections;
 using System.Linq;
 using NUnit.Framework;
 using UdonSharpEditor;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.SceneManagement;
+using UnityEngine.TestTools;
 using VRC.SDK3.Components;
 using VRC.Udon;
 
@@ -40,9 +43,11 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             new GameObject("Unmanaged").transform.position = new Vector3(5f, 1f, 5f);
         }
 
-        [TearDown]
-        public void TearDown()
+        [UnityTearDown]
+        public IEnumerator TearDown()
         {
+            // 置いた車両のある間に UdonSharp の遅れた処理を走らせてから、シーンを置き換える。
+            yield return TestWorkspace.WaitForDelayCalls();
             TestWorkspace.OpenEmptyScene();
             _workspace.Dispose();
         }
@@ -100,6 +105,65 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(container.childCount, Is.EqualTo(1));
             Assert.That(PrefabUtility.GetCorrespondingObjectFromSource(container.GetChild(0).gameObject),
                 Is.SameAs(AssetDatabase.LoadAssetAtPath<GameObject>(_settings.outputPrefabPath)));
+        }
+
+        [Test]
+        public void 初回の高さは伸びきった転輪の下端を床のすぐ上にする()
+        {
+            YakimaTankScenePlacement.Place(_settings, _scene);
+
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(_settings.outputPrefabPath);
+            float wheelBottom = prefab.GetComponentsInChildren<WheelCollider>(true)
+                .Min(w => prefab.transform.InverseTransformPoint(w.transform.position).y - w.suspensionDistance - w.radius);
+            float gap = _settings.placementPosition.y + wheelBottom;
+            Assert.That(gap, Is.InRange(0f, 0.1f), "床（高さ 0）から転輪の下端までの隙間");
+        }
+
+        [Test]
+        public void 初回の位置にほかのコライダーがあれば車両の長さだけ前へずらす()
+        {
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(_settings.outputPrefabPath);
+            Assert.That(YakimaTankBounds.TryGetLocalBounds(prefab.transform, prefab.transform, out Bounds bounds), Is.True);
+            float length = Mathf.Max(bounds.size.z, bounds.size.x);
+            float firstZ = _spawn.position.z + length * 0.5f + YakimaTankScenePlacement.SpawnMargin;
+            GameObject obstacle = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            obstacle.transform.position = new Vector3(0f, 1f, firstZ);
+            obstacle.transform.localScale = new Vector3(3f, 2f, 2f);
+
+            PlacementResult result = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(result.Succeeded, Is.True, result.Error);
+            Assert.That(_settings.placementPosition.z, Is.EqualTo(firstZ + length).Within(0.01f));
+        }
+
+        [Test]
+        public void 入れ物の中が生成Prefabのインスタンスでなければ変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            Object.DestroyImmediate(first.Instance);
+            new GameObject("Replaced").transform.SetParent(container, false);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("インスタンスではありません")), Is.True, string.Join(" / ", second.Conflicts));
+            Assert.That(container.childCount, Is.EqualTo(1));
+            Assert.That(container.GetChild(0).name, Is.EqualTo("Replaced"));
+        }
+
+        [Test]
+        public void 配置はシーンを保存しない()
+        {
+            string scenePath = _workspace.Folder + "/Placement.unity";
+            Assert.That(EditorSceneManager.SaveScene(_scene, scenePath), Is.True);
+            string before = TestWorkspace.Hash(scenePath);
+
+            PlacementResult result = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(result.Succeeded, Is.True, result.Error);
+            Assert.That(_scene.isDirty, Is.True, "変更がシーンに入っていない（判定にならない）");
+            Assert.That(TestWorkspace.Hash(scenePath), Is.EqualTo(before));
         }
 
         [Test]

@@ -43,6 +43,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private const float PositionTolerance = 0.001f;
         private const float AngleTolerance = 0.01f;
         private const int PlacementAttempts = 6;
+
+        /// <summary>車両の下の床の高さの違いの上限（m）。段差や台の上に置かないため。</summary>
+        private const float MaxFloorStep = 0.3f;
         private const string UdonSharpPrefabLinkPath = "serializationData.Prefab";
 
         public static string ContainerName(string placementId)
@@ -143,12 +146,12 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             if (managed == null)
             {
-                managed = ObjectFactory.CreateGameObject(scene, HideFlags.None, RootName);
+                managed = YakimaTankSetupService.CreateInScene(scene, RootName);
                 Undo.RegisterCreatedObjectUndo(managed, "YakimaTank の配置");
                 result.Changes.Add("管理用のルートを作った: " + RootName);
             }
 
-            GameObject holder = ObjectFactory.CreateGameObject(scene, HideFlags.None, ContainerName(settings.placementId));
+            GameObject holder = YakimaTankSetupService.CreateInScene(scene, ContainerName(settings.placementId));
             Undo.RegisterCreatedObjectUndo(holder, "YakimaTank の配置");
             holder.transform.SetParent(managed.transform, false);
             holder.transform.SetPositionAndRotation(settings.placementPosition, Quaternion.Euler(settings.placementRotation));
@@ -309,7 +312,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 Vector3 center = position + rotation * bounds.center + Vector3.up * 0.1f;
                 var hits = new Collider[16];
                 int count = physics.OverlapBox(center, bounds.extents * 0.95f, hits, rotation, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
-                bool blocked = hits.Take(count).Any(hit => hit != floor.collider);
+                bool blocked = hits.Take(count).Any(hit => hit != floor.collider) || !IsFlatUnder(physics, candidate, rotation, bounds, floor);
                 if (!blocked)
                 {
                     return true;
@@ -318,6 +321,28 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             error = "Spawn の前方に、車両が重ならずに置ける場所が見つかりません。";
             return false;
+        }
+
+        /// <summary>
+        /// 真ん中の真下だけで床を決めると、小さな台の上を床とみなして車両を載せてしまう。
+        /// 車両の下の四隅も、ほぼ同じ高さに床があることを確かめる（床が複数のコライダーでもよい）。
+        /// </summary>
+        private static bool IsFlatUnder(PhysicsScene physics, Vector3 candidate, Quaternion rotation, Bounds bounds, RaycastHit floor)
+        {
+            foreach (float sx in new[] { -1f, 1f })
+            {
+                foreach (float sz in new[] { -1f, 1f })
+                {
+                    var corner = new Vector3(bounds.center.x + sx * bounds.extents.x * 0.9f, 0f, bounds.center.z + sz * bounds.extents.z * 0.9f);
+                    if (!TryFindFloor(physics, candidate + rotation * corner, out RaycastHit hit) ||
+                        Mathf.Abs(hit.point.y - floor.point.y) > MaxFloorStep)
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
         }
 
         private static bool TryFindFloor(PhysicsScene physics, Vector3 candidate, out RaycastHit floor)
