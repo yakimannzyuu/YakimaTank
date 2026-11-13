@@ -1,11 +1,14 @@
 using System;
+using System.Collections;
 using System.Linq;
 using NUnit.Framework;
 using UdonSharpEditor;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.SceneManagement;
+using UnityEngine.TestTools;
 using VRC.Udon;
 using Object = UnityEngine.Object;
 
@@ -25,11 +28,12 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             _settings = _workspace.CreateSettings(_model);
         }
 
-        [TearDown]
-        public void TearDown()
+        [UnityTearDown]
+        public IEnumerator TearDown()
         {
             YakimaTankSetupService.BeforeSaveForTests = null;
             YakimaTankSetupService.AfterSaveForTests = null;
+            yield return TestWorkspace.WaitForDelayCalls();
             _workspace.Dispose();
         }
 
@@ -71,6 +75,58 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(Value<float>(vehicle, nameof(YakimaTankVehicle.mass)), Is.EqualTo(_settings.mass));
             Assert.That(Value<WheelCollider[]>(vehicle, nameof(YakimaTankVehicle.leftWheels)), Has.Length.EqualTo(3));
             Assert.That(Value<Rigidbody>(vehicle, nameof(YakimaTankVehicle.body)), Is.SameAs(prefab.GetComponent<Rigidbody>()));
+        }
+
+        [Test]
+        public void 出力先がこのツールで作っていないPrefabなら生成せずファイルも変えない()
+        {
+            AssetDatabase.CreateFolder(_workspace.Folder, "Generated");
+            var plain = new GameObject("Plain");
+            PrefabUtility.SaveAsPrefabAsset(plain, _settings.outputPrefabPath);
+            Object.DestroyImmediate(plain);
+            string before = TestWorkspace.Hash(_settings.outputPrefabPath);
+
+            SetupResult result = YakimaTankSetupService.Generate(_settings);
+
+            Assert.That(result.Succeeded, Is.False);
+            Assert.That(result.Diagnostics.Any(d => d.Severity == SetupSeverity.Error && d.Field == nameof(YakimaTankSetupSettings.outputPrefabPath)), Is.True);
+            Assert.That(TestWorkspace.Hash(_settings.outputPrefabPath), Is.EqualTo(before));
+        }
+
+        [Test]
+        public void 生成し直しても利用者が足したほかの入れ子のPrefabは消さない()
+        {
+            GenerateOrFail();
+            GameObject decoration = _workspace.CreateModel("Decoration");
+            GameObject contents = PrefabUtility.LoadPrefabContents(_settings.outputPrefabPath);
+            PrefabUtility.InstantiatePrefab(decoration, contents.transform);
+            PrefabUtility.SaveAsPrefabAsset(contents, _settings.outputPrefabPath);
+            PrefabUtility.UnloadPrefabContents(contents);
+
+            GameObject second = GenerateOrFail();
+
+            Transform kept = second.transform.Find("Decoration");
+            Assert.That(kept, Is.Not.Null, "足した入れ子の Prefab が消えた");
+            Assert.That(PrefabUtility.GetCorrespondingObjectFromSource(kept.gameObject), Is.SameAs(decoration));
+        }
+
+        [Test]
+        public void 生成は開いているシーンを未保存にしない()
+        {
+            Scene scene = TestWorkspace.OpenEmptyScene();
+            try
+            {
+                Assert.That(EditorSceneManager.SaveScene(scene, _workspace.Folder + "/Open.unity"), Is.True);
+
+                GenerateOrFail();
+                Assert.That(scene.isDirty, Is.False, "新しく作るときに未保存になった");
+                GenerateOrFail();
+                Assert.That(scene.isDirty, Is.False, "作り直すときに未保存になった");
+            }
+            finally
+            {
+                TestWorkspace.OpenEmptyScene();
+            }
         }
 
         [Test]

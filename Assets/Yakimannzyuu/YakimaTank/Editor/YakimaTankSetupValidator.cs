@@ -240,6 +240,14 @@ namespace Yakimannzyuu.YakimaTank.Editor
             if (settings.modelPrefab != null && AssetDatabase.GetAssetPath(settings.modelPrefab) == path)
             {
                 error(nameof(settings.outputPrefabPath), "出力先が元のモデルと同じです。元のモデルは変えません。");
+                return;
+            }
+
+            // 生成は出力先を読み直して組み立て直すので、このツールで作っていない Prefab を指すと中身を壊してしまう。
+            var existing = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (existing != null && existing.GetComponent<YakimaTankVehicle>() == null)
+            {
+                error(nameof(settings.outputPrefabPath), "出力先に、このツールで作っていない Prefab があります。上書きしないので、別の出力先にしてください。");
             }
         }
     }

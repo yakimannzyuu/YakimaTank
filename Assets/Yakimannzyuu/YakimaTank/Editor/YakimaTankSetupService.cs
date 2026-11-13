@@ -74,7 +74,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Scene preview = exists ? default : EditorSceneManager.NewPreviewScene();
             GameObject root = exists
                 ? PrefabUtility.LoadPrefabContents(path)
-                : ObjectFactory.CreateGameObject(preview, HideFlags.None, Path.GetFileNameWithoutExtension(path));
+                : CreateInScene(preview, Path.GetFileNameWithoutExtension(path));
             bool saved = false;
             try
             {
@@ -317,7 +317,6 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Record(nameof(YakimaTankVehicle), vehicleCreated);
         }
 
-        /// <summary>車両のスクリプトの UdonBehaviourSyncMode が決める同期方式。Any・NoVariableSync なら決まらない。</summary>
         private static bool TryGetSyncType(out Networking.SyncType sync)
         {
             var attribute = (UdonBehaviourSyncModeAttribute)Attribute.GetCustomAttribute(typeof(YakimaTankVehicle), typeof(UdonBehaviourSyncModeAttribute));
@@ -338,13 +337,11 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
         }
 
-        /// <summary>
-        /// 直下の入れ子の Prefab のうち、元のモデルのものを返す。別のモデルのもの（モデルを差し替えた）は消す。
-        /// </summary>
         private static GameObject FindOrReplaceModel(GameObject root, GameObject model, SetupResult result)
         {
             GameObject found = null;
-            foreach (Transform child in root.transform.Cast<Transform>().ToList())
+            // 生成が置いた「Model」だけを見る。利用者が足したほかの入れ子の Prefab は消さない。
+            foreach (Transform child in root.transform.Cast<Transform>().Where(t => t.name == ModelName).ToList())
             {
                 if (!PrefabUtility.IsAnyPrefabInstanceRoot(child.gameObject))
                 {
@@ -410,11 +407,21 @@ namespace Yakimannzyuu.YakimaTank.Editor
             return CreateChild(parent, name).transform;
         }
 
-        /// <summary>親と同じシーン（Prefab の編集用のシーン）に直接作る。new GameObject は開いているシーンに置かれるため使わない。</summary>
         private static GameObject CreateChild(Transform parent, string name)
         {
-            GameObject gameObject = ObjectFactory.CreateGameObject(parent.gameObject.scene, HideFlags.None, name);
+            var gameObject = new GameObject(name);
             gameObject.transform.SetParent(parent, false);
+            return gameObject;
+        }
+
+        /// <summary>
+        /// ObjectFactory.CreateGameObject は、ほかのシーンを指定しても開いているシーンに未保存の印を付ける。
+        /// new GameObject はいったん開いているシーンにできるが、すぐに移せば印は付かない。
+        /// </summary>
+        internal static GameObject CreateInScene(Scene scene, string name)
+        {
+            var gameObject = new GameObject(name);
+            SceneManager.MoveGameObjectToScene(gameObject, scene);
             return gameObject;
         }
 
@@ -431,7 +438,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             return behaviours.Length == 0 ? null : (YakimaTankVehicle)UdonSharpEditorUtility.GetProxyBehaviour(behaviours[0]);
         }
 
-        /// <summary>前の WheelCollider を番号ごとに使い回し、中のオブジェクトと参照を保つ。減った分だけ消す。</summary>
+        // 作り直すとシーンからの参照が切れるので、前の WheelCollider を番号ごとに使い回す。
         private static WheelCollider[] ReconcileWheels(
             WheelCollider[] existing, List<WheelSpec> specs, string prefix, Transform container, Transform root,
             YakimaTankSetupSettings settings, float spring, float damper, bool updating, SetupResult result)
@@ -489,20 +496,19 @@ namespace Yakimannzyuu.YakimaTank.Editor
             collider.sidewaysFriction = sideways;
         }
 
-        /// <summary>保存の前に、重なりや取りこぼしがないかを確かめる。違えば保存しない。</summary>
         private static void Inspect(YakimaTankSetupSettings settings, GameObject root)
         {
             Require(root.GetComponentsInChildren<Rigidbody>(true).Length == 1, "Rigidbody はルートに 1 つだけのはずです。");
             Require(root.GetComponentsInChildren<UdonBehaviour>(true)
                 .Count(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankVehicle)) == 1, "車両の Udon は 1 つだけのはずです。");
-            Require(root.transform.Cast<Transform>().Count(t => PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)) == 1, "元のモデルの入れ子の Prefab は 1 つだけのはずです。");
+            Require(root.transform.Cast<Transform>().Count(t => t.name == ModelName && PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)) == 1, "元のモデルの入れ子の Prefab は 1 つだけのはずです。");
             YakimaTankVehicle vehicle = FindVehicleProxy(root);
             Require(vehicle.leftWheels.Length == settings.leftWheels.Length && vehicle.rightWheels.Length == settings.rightWheels.Length, "WheelCollider の数が設定と合いません。");
             Require(vehicle.leftWheels.Concat(vehicle.rightWheels).All(w => w != null && w.transform.IsChildOf(root.transform)), "WheelCollider の参照が欠けています。");
             Require(root.GetComponentsInChildren<WheelCollider>(true).Length == settings.leftWheels.Length + settings.rightWheels.Length, "参照されていない WheelCollider があります。");
         }
 
-        /// <summary>保存した Prefab を読み直し、Udon に値と参照が入ったかを確かめる。</summary>
+        // UdonSharp の値は裏の UdonBehaviour に写して初めて Prefab に残るので、保存した Prefab を読み直して確かめる。
         private static void InspectSaved(YakimaTankSetupSettings settings, string path)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);

@@ -123,6 +123,38 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void 半径を自動にした転輪にメッシュがなければErrorになり半径を決めれば通る()
+        {
+            string path = AssetDatabase.GetAssetPath(_model);
+            GameObject contents = PrefabUtility.LoadPrefabContents(path);
+            new GameObject("Empty").transform.SetParent(contents.transform.Find("Left"), false);
+            PrefabUtility.SaveAsPrefabAsset(contents, path);
+            PrefabUtility.UnloadPrefabContents(contents);
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            Assert.That(settings.leftWheels.Any(w => w.name == "Empty"), Is.True, "メッシュのない転輪を選べていない（判定にならない）");
+
+            settings.wheelRadius = 0f;
+            Assert.That(YakimaTankSetupValidator.Validate(settings)
+                .Any(d => d.Severity == SetupSeverity.Error && d.Field == nameof(settings.wheelRadius)), Is.True);
+
+            settings.wheelRadius = TestWorkspace.WheelRadius;
+            Assert.That(YakimaTankSetupValidator.Validate(settings)
+                .Any(d => d.Severity == SetupSeverity.Error && d.Field == nameof(settings.wheelRadius)), Is.False);
+        }
+
+        [Test]
+        public void 左右の転輪の数が違えばWarningになるが生成は止めない()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            settings.rightWheels = settings.rightWheels.Take(2).ToArray();
+
+            var diagnostics = YakimaTankSetupValidator.Validate(settings);
+
+            Assert.That(YakimaTankSetupValidator.HasErrors(diagnostics), Is.False);
+            Assert.That(diagnostics.Any(d => d.Severity == SetupSeverity.Warning && d.Field == nameof(settings.rightWheels)), Is.True);
+        }
+
+        [Test]
         public void 砲塔は記録できるが未実装のWarningになる()
         {
             YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);

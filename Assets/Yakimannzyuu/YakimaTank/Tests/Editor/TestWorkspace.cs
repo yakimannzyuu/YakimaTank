@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -120,6 +121,21 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         public static Scene OpenEmptyScene()
         {
             return EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+        }
+
+        /// <summary>
+        /// 積まれた delayCall が走るまで待つ。UdonSharp は部品を足した後の処理を delayCall で行い、
+        /// その前に一時のフォルダを消すと、消えたオブジェクトに触れて例外のログを出す。
+        /// </summary>
+        public static IEnumerator WaitForDelayCalls()
+        {
+            bool done = false;
+            EditorApplication.delayCall += () => done = true;
+            double deadline = EditorApplication.timeSinceStartup + 10;
+            while (!done && EditorApplication.timeSinceStartup < deadline)
+            {
+                yield return null;
+            }
         }
 
         public static string Hash(string assetPath)

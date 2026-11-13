@@ -56,7 +56,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
-            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃・同期・乗車と入力の割り当て。この版は走行（SetDriveInput）まで。", MessageType.Info);
+            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃・同期・乗車と入力の割り当て。いまできるのは走行（SetDriveInput）まで。", MessageType.Info);
             settings = (YakimaTankSetupSettings)EditorGUILayout.ObjectField("設定アセット", settings, typeof(YakimaTankSetupSettings), false);
             if (settings == null)
             {
@@ -98,7 +98,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             settings = CreateInstance<YakimaTankSetupSettings>();
             AssetDatabase.CreateAsset(settings, path);
-            AssetDatabase.SaveAssets();
+
+            // SaveAssets は利用者のほかの未保存のアセットまで保存するので、作った設定だけを保存する。
+            AssetDatabase.SaveAssetIfDirty(settings);
         }
 
         private void DrawSettings()
