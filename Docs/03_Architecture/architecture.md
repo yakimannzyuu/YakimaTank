@@ -92,6 +92,10 @@ sequenceDiagram
 | `TestWorkspace` | Tests/Editor | テストの一時フォルダと、立方体と円柱のモデル |
 | `YakimaTankDriveTestBase` | Tests/Runtime | 走行の判定（PlayMode・ClientSim）。生成物ごとに派生させる |
 
+## これからの設計
+
+これから足す機能の段階と境界の案は [prototype-plan.md](prototype-plan.md)。この文書は今の実装だけを描く。
+
 ## そのほかの図
 
 | 図 | ファイル |
