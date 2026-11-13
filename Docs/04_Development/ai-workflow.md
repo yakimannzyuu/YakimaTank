@@ -55,9 +55,10 @@ AI のエージェントが、起動済みの Unity Editor を使って実装か
 プロジェクトのルートで実行する。
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File Assets/YakimaTankDev/DevTools/Tools~/ytdev.ps1 <操作> [-Args '<JSON>'] [-RequestId <ID>] [-TimeoutSeconds <秒>] [-Json]
+powershell -NoProfile -ExecutionPolicy Bypass -File Assets/YakimaTankDev/DevTools/Tools~/ytdev.ps1 <操作> [-ArgsJson '<JSON>' | -ArgsFile <JSON のファイル>] [-RequestId <ID>] [-TimeoutSeconds <秒>] [-Json]
 ```
 
+- PowerShell から `powershell -File` で呼ぶと、`-ArgsJson` の JSON の引用符が落ちる。そのときは JSON をファイルに書いて `-ArgsFile` で渡す。
 - 要求 ID を省くと新しく作る。応答がないまま期限を過ぎたら、同じ要求を送り直さず `result -RequestId <ID>` で照会する。
 - 終了コード：0 成功、1 失敗（コード・テスト）、2 コンパイルの失敗、3 接続できない・環境、4 期限切れ・結果不明、5 断られた（実行中・手動の Play・未保存）。
 

@@ -79,6 +79,8 @@ namespace Yakimannzyuu.YakimaTank
             if (!_ValidateSettings())
             {
                 _StopBody();
+                _ReleaseWheels(leftWheels);
+                _ReleaseWheels(rightWheels);
                 return;
             }
 
@@ -95,8 +97,8 @@ namespace Yakimannzyuu.YakimaTank
             body.transform.SetPositionAndRotation(spawnPosition, spawnRotation);
             body.position = spawnPosition;
             body.rotation = spawnRotation;
-            _ResetWheels(leftWheels);
-            _ResetWheels(rightWheels);
+            _ReleaseWheels(leftWheels);
+            _ReleaseWheels(rightWheels);
             isReady = true;
         }
 
@@ -202,12 +204,22 @@ namespace Yakimannzyuu.YakimaTank
             return grounded;
         }
 
-        private void _ResetWheels(WheelCollider[] wheels)
+        /// <summary>設定の検証に失敗したときも呼ぶので、足りない参照は飛ばして、外せる転輪だけ外す。</summary>
+        private void _ReleaseWheels(WheelCollider[] wheels)
         {
+            if (wheels == null)
+            {
+                return;
+            }
+
             for (int index = 0; index < wheels.Length; index++)
             {
-                wheels[index].motorTorque = 0f;
-                wheels[index].brakeTorque = 0f;
+                WheelCollider wheel = wheels[index];
+                if (Utilities.IsValid(wheel))
+                {
+                    wheel.motorTorque = 0f;
+                    wheel.brakeTorque = 0f;
+                }
             }
         }
 

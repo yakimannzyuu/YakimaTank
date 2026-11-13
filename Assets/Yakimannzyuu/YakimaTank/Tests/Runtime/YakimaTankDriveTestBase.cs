@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Tsvrc.UdonTestKit;
 using UdonSharpEditor;
@@ -209,6 +210,23 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             // 1e-3 は相対の許容差（float の質量の丸めを見込む）。
             Assert.That(Body.mass, Is.EqualTo(15000f).Within(15000f * 1e-3f));
             Assert.That(_vehicle.GetProgramVariable(nameof(YakimaTankVehicle.generation)), Is.EqualTo(generation + 1));
+        }
+
+        [UnityTest]
+        public IEnumerator 再適用の値が不正なら転輪の駆動を外して止まったままにする()
+        {
+            yield return Place();
+            SetInput(1f, 0f, 0f);
+            yield return Steps(2 * StepsPerSecond);
+            Assert.That(ForwardSpeed, Is.GreaterThan(1f), "止める前に速度が出ていない（判定にならない）");
+
+            LogAssert.Expect(LogType.Error, new Regex(@"\[YakimaTank\].*mass"));
+            YakimaTankPlayTuning.Reapply(_vehicle, Working(w => w.mass = 0f));
+            yield return Steps(StepsPerSecond);
+
+            Assert.That(_vehicle.GetProgramVariable(nameof(YakimaTankVehicle.isReady)), Is.False);
+            Assert.That(_vehicleRoot.GetComponentsInChildren<WheelCollider>().Select(w => w.motorTorque), Is.All.EqualTo(0f), "駆動のトルクが残っている");
+            Assert.That(Body.velocity.magnitude, Is.LessThan(0.2f));
         }
 
         [UnityTest]

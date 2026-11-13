@@ -311,6 +311,45 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void 同じ設定の作業値は作り直さずに変えた値を保つ()
+        {
+            var working = new YakimaTankWorkingValues();
+            try
+            {
+                working.For(_settings).maxTurnRate = 45f;
+
+                Assert.That(working.For(_settings).maxTurnRate, Is.EqualTo(45f));
+            }
+            finally
+            {
+                working.Discard();
+            }
+        }
+
+        [Test]
+        public void 設定を替えると作業値は新しい設定から作り直し前の設定の値で上書きしない()
+        {
+            YakimaTankSetupSettings other = _workspace.CreateSettings(_model, "OtherSettings");
+            other.maxTurnRate = 20f;
+            var working = new YakimaTankWorkingValues();
+            try
+            {
+                working.For(_settings).maxTurnRate = 45f;
+
+                YakimaTankSetupSettings forOther = working.For(other);
+                YakimaTankPlayTuning.SaveWorkingValues(forOther, other);
+
+                Assert.That(forOther.maxTurnRate, Is.EqualTo(20f));
+                Assert.That(other.maxTurnRate, Is.EqualTo(20f));
+                Assert.That(_settings.maxTurnRate, Is.Not.EqualTo(45f), "保存していない作業値が元の設定に入っている");
+            }
+            finally
+            {
+                working.Discard();
+            }
+        }
+
+        [Test]
         public void 元のモデルを差し替えると入れ子のモデルだけを置き換えて転輪は使い回す()
         {
             GameObject first = GenerateOrFail();
