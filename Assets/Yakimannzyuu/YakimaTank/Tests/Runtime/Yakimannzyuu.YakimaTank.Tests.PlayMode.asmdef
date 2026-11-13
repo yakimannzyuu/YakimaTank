@@ -1,0 +1,41 @@
+{
+    "name": "Yakimannzyuu.YakimaTank.Tests.PlayMode",
+    "rootNamespace": "Yakimannzyuu.YakimaTank.Tests.PlayMode",
+    "references": [
+        "Yakimannzyuu.YakimaTank",
+        "Yakimannzyuu.YakimaTank.Editor",
+        "Yakimannzyuu.YakimaTank.Editor.Tests",
+        "UdonSharp.Editor",
+        "UdonSharp.Runtime",
+        "VRC.Udon",
+        "VRC.SDKBase",
+        "VRC.SDK3",
+        "VRC.ClientSim",
+        "Tsvrc.UdonTestKit",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "VRCSDKBase.dll",
+        "VRCSDK3.dll",
+        "VRC.Udon.Common.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "YAKIMATANK_UDON_TEST_KIT"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.tsvrc.udon-test-kit",
+            "expression": "1.1.0",
+            "define": "YAKIMATANK_UDON_TEST_KIT"
+        }
+    ],
+    "noEngineReferences": false
+}
