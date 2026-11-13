@@ -10,3 +10,5 @@
 | [0004](0004-vpm-at-release.md) | VPM 配布はリリース時に整える | 承認 | 今は vpmDependencies と CHANGELOG の準備だけ |
 | [0005](0005-mit-license.md) | ライセンスを MIT とする | 承認 | 戦車モデル本体は含めず、別のライセンス |
 | [0006](0006-no-devcontainer-local-skills.md) | devcontainer を使わず、同梱スキルは Git に入れない | 承認 | rules-adr 0009・0018 を置き換え。ponytail はローカルだけ |
+| [0007](0007-ai-verification-in-running-editor.md) | 起動済みの Editor で AI が検証する | 承認 | ローカル連携で AI がコンパイル・テスト・生成・ビルド。付録 U の 2 項目と 8 章の役割を置き換え |
+| [0008](0008-settings-as-source-shared-generation.md) | 設定アセットを正本にして、生成とワールドの更新を共通にする | 承認 | ウィンドウと AI が同じ処理。非破壊の生成をその場で更新。Play 中は C・A 案＋W2 |

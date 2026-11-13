@@ -11,7 +11,7 @@ model: sonnet
 
 ## 手順
 
-1. `Docs/04_Development/rules.md` と `AGENTS.md` を読む。
+1. `Docs/04_Development/rules.md`・`AGENTS.md`・`Docs/04_Development/ai-workflow.md` を読む。
 2. `git diff main...HEAD` と `git log main..HEAD` で変更を確かめる。
 3. 関係する仕様書（`Docs/02_Specifications/`）・ADR（`Docs/05_Decisions/project/`・`Docs/05_Decisions/rules/`）・`Docs/03_Architecture/architecture.md` を読む。
 4. 下の観点で確認する。
@@ -33,6 +33,8 @@ model: sonnet
   - Runtime のコードで、UdonSharp が対応しない C# の機能を使っていないか。
   - `Assets/Yakimannzyuu/YakimaTank/` の外の Assets や `Docs/00_Memo/` を Git に入れていないか。
   - エージェントが確かめられない動作（プレイ・見た目・VR / Desktop の操作・同期）を、仕様書と PR の「試してほしいこと」に書いているか。
+- **検証の証拠**：PR に書く検証の結果（要求 ID・入力のハッシュ）が、最後の変更より後のもので、最終の生成物・コードに対応しているか。テスト 0 件・古い結果・中断・承認していないスキップを成功と書いていないか。テストを緩めたり `[Ignore]` を足したりして通していないか。
+- **公開範囲（ADR 0007・0008）**：`Assets/YakimaTankDev/`・`Library/`・`Docs/00_Memo/` の中身、参考モデルの固有の情報、個人のパス、参考にした基盤の名前、トークンが、公開する差分に入っていないか。`Packages/packages-lock.json`・`manifest.json` に非公開のパッケージや絶対パスの `file:` が入っていないか。公開する製品のコードが、ローカルの連携や Udon Test Kit に依存していないか。
 - **文書**：利用者向け文書に版の注記がないか。
 
 ## 返す形

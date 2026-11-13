@@ -4,6 +4,11 @@
     "references": [
         "Yakimannzyuu.YakimaTank",
         "Yakimannzyuu.YakimaTank.Editor",
+        "UdonSharp.Editor",
+        "UdonSharp.Runtime",
+        "VRC.Udon",
+        "VRC.SDKBase",
+        "VRC.SDK3",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
@@ -14,7 +19,10 @@
     "allowUnsafeCode": false,
     "overrideReferences": true,
     "precompiledReferences": [
-        "nunit.framework.dll"
+        "nunit.framework.dll",
+        "VRCSDKBase.dll",
+        "VRCSDK3.dll",
+        "VRC.Udon.Common.dll"
     ],
     "autoReferenced": false,
     "defineConstraints": [

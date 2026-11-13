@@ -40,6 +40,10 @@
 - `.claude/agents/reviewer.md`：パスと、付録 U の観点を足した
 - `.claude/settings.json`：PowerShell の権限ルールを足した
 - `.claude/skills/` の ponytail 3 つ：ローカルにだけ置き、Git に入れない（ADR 0006）
+- `Docs/02_Specifications/_template.md`：承認・関連 Issue・PR までに通す検証・除外と未確認・承認待ちの項目の欄を足した（2026-11-13、ADR 0007）
+- `Docs/02_Specifications/_tasks_template.md`：「再開の状態」の欄を足した（2026-11-13、ADR 0007）
+- `.claude/agents/`：`verifier` を足し、`reviewer` に検証の証拠と公開範囲の観点を足した。`CLAUDE.md` の役割の行を直した（2026-11-13、ADR 0007）
+- `.codex/agents/`：原本にない。Codex 用の役割の定義を足した（2026-11-13、ADR 0007）
 
 
 ## 2026.11.0 (2026-11-04)

@@ -36,7 +36,10 @@ Unity は導入したコミットを `Packages/packages-lock.json` に記録し�
 
 1. このリポジトリを clone する
 2. VCC で「既存のプロジェクトを追加」から clone したフォルダを選び、Resolve で VRChat SDK を復元する
+   - テストに使う Udon Test Kit も Resolve で戻る。先に TsVRC の VPM リポジトリを VCC に足しておく（[手順](https://tsvrc.com/docs/install-a-package)）
 3. Unity で開く
+
+AI のエージェントが開いている Editor でコンパイルやテストを行う「ローカル Editor 連携」は、任意のローカル機能で、このリポジトリには入っていません。入れていない環境では、Unity でコンパイルとテストを確かめます（[AI の作業手順](Docs/04_Development/ai-workflow.md)）。
 
 Git に入れるのは、`Assets/` の下では `Assets/Yakimannzyuu/YakimaTank/` だけです。開発の進め方は [AGENTS.md](AGENTS.md) と [Docs/04_Development/rules.md](Docs/04_Development/rules.md) にあります。
 
@@ -54,6 +57,7 @@ Git に入れるのは、`Assets/` の下では `Assets/Yakimannzyuu/YakimaTank/
 
 ## 最近の更新
 
+- 0.1.0：走行（前進・後退・旋回・制動）と、セットアップウィンドウでの生成・シーンへの配置・Play 中の調整
 - 0.0.1：パッケージの雛形
 
 変更の一覧は [CHANGELOG.md](Assets/Yakimannzyuu/YakimaTank/CHANGELOG.md) にあります。
