@@ -114,6 +114,10 @@ namespace Yakimannzyuu.YakimaTank.Editor
             {
                 error(nameof(settings.body), "車体が、元のモデルの中を指していません。");
             }
+            else if (!YakimaTankBounds.TryGetOwnBounds(settings.body, settings.body, out _, settings.turret, settings.barrel))
+            {
+                error(nameof(settings.body), "車体の範囲を求められません。砲塔と砲身を除くと、車体の下にメッシュがありません。車体には、車体のメッシュがある階層を選んでください。");
+            }
 
             ValidateWheels(settings.leftWheels, nameof(settings.leftWheels), model, modelPath, error);
             ValidateWheels(settings.rightWheels, nameof(settings.rightWheels), model, modelPath, error);

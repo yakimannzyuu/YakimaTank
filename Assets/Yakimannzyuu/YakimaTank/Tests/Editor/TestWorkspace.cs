@@ -61,13 +61,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                     hull.AddComponent<BoxCollider>();
                     turret.AddComponent<SphereCollider>().isTrigger = true;
                 }
-                GameObject left = Node(preview, "Left", root.transform, Vector3.zero);
-                GameObject right = Node(preview, "Right", root.transform, Vector3.zero);
-                foreach (float z in new[] { -1.2f, 0f, 1.2f })
-                {
-                    Wheel(preview, left.transform, new Vector3(-1.15f, WheelRadius, z));
-                    Wheel(preview, right.transform, new Vector3(1.15f, WheelRadius, z));
-                }
+                AddWheels(preview, root.transform);
 
                 string path = Folder + "/" + name + ".prefab";
                 GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
@@ -77,6 +71,67 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             finally
             {
                 EditorSceneManager.ClosePreviewScene(preview);
+            }
+        }
+
+        /// <summary>メッシュのない親のモデルで、車体のメッシュの前端と上端。</summary>
+        public const float MeshlessHullFront = 2f;
+        public const float MeshlessHullTop = 1.3f;
+
+        /// <summary>メッシュのない親のモデルで、砲塔のメッシュの上面の中央（砲身を含めない座席の自動の位置）。</summary>
+        public static readonly Vector3 MeshlessTurretTop = new Vector3(0f, 1.7f, -0.5f);
+
+        /// <summary>
+        /// 車体と砲塔が、メッシュを持たない親のモデル。Body の下に車体のメッシュと砲塔、砲塔の下に砲塔のメッシュと、
+        /// 車体の前端（z = 2）より 3 m 前（z = 5）まで突き出す砲身を置く。withHullMesh を外すと、車体の下は砲塔だけになる。
+        /// </summary>
+        public GameObject CreateMeshlessParentModel(string name = "MeshlessParentTank", bool withHullMesh = true)
+        {
+            Scene preview = EditorSceneManager.NewPreviewScene();
+            try
+            {
+                GameObject root = Node(preview, name, null, Vector3.zero);
+                GameObject body = Node(preview, "Body", root.transform, Vector3.zero);
+                if (withHullMesh)
+                {
+                    Primitive(preview, PrimitiveType.Cube, "HullMesh", body.transform, new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
+                }
+
+                GameObject turret = Node(preview, "Turret", body.transform, new Vector3(0f, 1.5f, -0.5f));
+                Primitive(preview, PrimitiveType.Cube, "TurretMesh", turret.transform, Vector3.zero, new Vector3(1.2f, 0.4f, 1.6f));
+                Primitive(preview, PrimitiveType.Cube, "Barrel", turret.transform, new Vector3(0f, 0f, 3.15f), new Vector3(0.15f, 0.15f, 4.7f));
+                AddWheels(preview, root.transform);
+
+                string path = Folder + "/" + name + ".prefab";
+                GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
+                Object.DestroyImmediate(root);
+                return prefab;
+            }
+            finally
+            {
+                EditorSceneManager.ClosePreviewScene(preview);
+            }
+        }
+
+        /// <summary><see cref="CreateMeshlessParentModel"/> の対応を全部埋めた設定（砲身も対応させる）。</summary>
+        public YakimaTankSetupSettings CreateMeshlessParentSettings(GameObject model, string name = "MeshlessParentSettings")
+        {
+            YakimaTankSetupSettings settings = CreateSettings(model, name);
+            settings.body = model.transform.Find("Body");
+            settings.turret = model.transform.Find("Body/Turret");
+            settings.barrel = model.transform.Find("Body/Turret/Barrel");
+            EditorUtility.SetDirty(settings);
+            return settings;
+        }
+
+        private static void AddWheels(Scene scene, Transform root)
+        {
+            GameObject left = Node(scene, "Left", root, Vector3.zero);
+            GameObject right = Node(scene, "Right", root, Vector3.zero);
+            foreach (float z in new[] { -1.2f, 0f, 1.2f })
+            {
+                Wheel(scene, left.transform, new Vector3(-1.15f, WheelRadius, z));
+                Wheel(scene, right.transform, new Vector3(1.15f, WheelRadius, z));
             }
         }
 
