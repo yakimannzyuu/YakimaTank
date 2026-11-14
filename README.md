@@ -32,6 +32,10 @@ Unity は導入したコミットを `Packages/packages-lock.json` に記録し�
 
 最新版にするには、上の手順 3・4 で同じ URL をもう一度指定します。コミットハッシュを付けて固定していた場合は、それを外すか、更新先のハッシュに変えてください（[Unity の Git 依存関係の仕様](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-git.html#git-locks)）。
 
+## 使い方
+
+セットアップの手順と操作の一覧（Desktop・VR・デバッグ UI）は、パッケージの [README](Assets/Yakimannzyuu/YakimaTank/README.md) にあります。戦車を Interact すると砲塔の上の座席に座り、Desktop は Space、VR はジャンプで降ります。
+
 ## 開発に参加する
 
 1. このリポジトリを clone する
@@ -57,6 +61,7 @@ Git に入れるのは、`Assets/` の下では `Assets/Yakimannzyuu/YakimaTank/
 
 ## 最近の更新
 
+- 0.2.0：1 人での乗降（戦車を Interact して砲塔の座席へ）と、Desktop（W・S・A・D）・VR（左手のグリップとトリガー）での走行、デバッグ UI。まだ同期しない
 - 0.1.0：走行（前進・後退・旋回・制動）と、セットアップウィンドウでの生成・シーンへの配置・Play 中の調整
 - 0.0.1：パッケージの雛形
 

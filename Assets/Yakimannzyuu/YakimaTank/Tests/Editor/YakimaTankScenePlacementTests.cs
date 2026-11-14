@@ -313,6 +313,135 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(VehicleCount(), Is.EqualTo(1));
         }
 
+        /// <summary>デバッグ UI の Prefab のインスタンスを入れ物に置く。vehicleRoot が null なら車両を指定しない。</summary>
+        private static GameObject AddPanel(Transform container, GameObject vehicleRoot)
+        {
+            GameObject prefab = YakimaTankDebugPanelPlacement.LoadPrefab();
+            Assert.That(prefab, Is.Not.Null, "デバッグ UI の Prefab がない");
+            var panel = (GameObject)PrefabUtility.InstantiatePrefab(prefab, container.gameObject.scene);
+            panel.transform.SetParent(container, false);
+            UdonBehaviour udon = YakimaTankRuntimeValues.FindBehaviour(panel, typeof(YakimaTankDebugPanel));
+            var proxy = (YakimaTankDebugPanel)UdonSharpEditorUtility.GetProxyBehaviour(udon);
+            proxy.vehicle = vehicleRoot == null ? null : (YakimaTankVehicle)UdonSharpEditorUtility.GetProxyBehaviour(YakimaTankRuntimeValues.FindVehicle(vehicleRoot));
+            UdonSharpEditorUtility.CopyProxyToUdon(proxy);
+            return panel;
+        }
+
+        private static GameObject[] Children(Transform container)
+        {
+            return container.Cast<Transform>().Select(t => t.gameObject).ToArray();
+        }
+
+        [Test]
+        public void 入れ物にその車両を指すパネルが1枚あると2回目の配置は止まらず車両1台とパネル1枚のまま()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            GameObject panel = AddPanel(container, first.Instance);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.True, second.Error + " " + string.Join(" / ", second.Conflicts));
+            Assert.That(second.Instance, Is.SameAs(first.Instance));
+            Assert.That(Children(container), Is.EquivalentTo(new[] { first.Instance, panel }));
+        }
+
+        [Test]
+        public void パネルが車両より前の子でも車両を見分ける()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            GameObject panel = AddPanel(container, first.Instance);
+            panel.transform.SetAsFirstSibling();
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.True, second.Error + " " + string.Join(" / ", second.Conflicts));
+            Assert.That(second.Instance, Is.SameAs(first.Instance));
+        }
+
+        [Test]
+        public void パネルが2枚あれば変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            AddPanel(container, first.Instance);
+            AddPanel(container, first.Instance);
+            GameObject[] before = Children(container);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("2 枚")), Is.True, string.Join(" / ", second.Conflicts));
+            Assert.That(Children(container), Is.EqualTo(before));
+        }
+
+        [Test]
+        public void 別の車両を指すパネルがあれば変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            var other = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(_settings.outputPrefabPath), _scene);
+            other.transform.position = new Vector3(20f, 0f, 20f);
+            AddPanel(container, other);
+            GameObject[] before = Children(container);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("車両を指していません")), Is.True, string.Join(" / ", second.Conflicts));
+            Assert.That(Children(container), Is.EqualTo(before));
+        }
+
+        [Test]
+        public void 車両の指定がないパネルがあれば変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            AddPanel(container, null);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("車両を指していません")), Is.True, string.Join(" / ", second.Conflicts));
+        }
+
+        [Test]
+        public void 入れ物にパネルでも車両でもないものがあれば変えずに止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            Transform container = first.Instance.transform.parent;
+            new GameObject("Extra").transform.SetParent(container, false);
+            GameObject[] before = Children(container);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("Extra")), Is.True, string.Join(" / ", second.Conflicts));
+            Assert.That(Children(container), Is.EqualTo(before));
+        }
+
+        [Test]
+        public void 配置とパネルを置く処理を2回してもパネルは1枚で同じ入れ物の車両を指す()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            PanelPlacementResult firstPanel = YakimaTankDebugPanelPlacement.EnsurePanel(first);
+            Assert.That(firstPanel.Succeeded, Is.True, firstPanel.Error);
+            Assert.That(firstPanel.Created, Is.True);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+            Assert.That(second.Succeeded, Is.True, second.Error + " " + string.Join(" / ", second.Conflicts));
+            PanelPlacementResult secondPanel = YakimaTankDebugPanelPlacement.EnsurePanel(second);
+
+            Assert.That(secondPanel.Succeeded, Is.True, secondPanel.Error);
+            Assert.That(secondPanel.Created, Is.False);
+            Assert.That(secondPanel.Panel, Is.SameAs(firstPanel.Panel));
+            Transform container = second.Instance.transform.parent;
+            Assert.That(Children(container).Count(YakimaTankDebugPanelPlacement.IsPanel), Is.EqualTo(1));
+            Assert.That(YakimaTankDebugPanelPlacement.PointsTo(secondPanel.Panel, second.Instance), Is.True);
+            Assert.That(VehicleCount(), Is.EqualTo(1));
+        }
+
         [Test]
         public void 生成Prefabがなければ置かない()
         {

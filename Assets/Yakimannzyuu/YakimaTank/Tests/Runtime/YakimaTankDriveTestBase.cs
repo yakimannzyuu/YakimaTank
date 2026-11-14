@@ -19,8 +19,6 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
     /// </summary>
     public abstract class YakimaTankDriveTestBase : ClientSimTestBase
     {
-        private const int StepsPerSecond = 50;
-
         private GameObject _prefab;
         private YakimaTankSetupSettings _settings;
         private GameObject _vehicleRoot;
@@ -36,8 +34,17 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         /// <summary>車両を置く高さ（床の上面は 0）。転輪が床にめり込まず、落ちる距離が短い高さ。</summary>
         protected virtual float SpawnHeight => 0.1f;
 
-        private IEnumerator Place()
+        /// <summary>
+        /// 床と車両を置く。withPlayer なら先に ClientSim を始め、ローカルのプレイヤーと座席（VRCStation）の処理を使えるようにする。
+        /// 走行だけのテストでは始めない（Udon VM だけで足りる）。
+        /// </summary>
+        private IEnumerator Place(bool withPlayer = false)
         {
+            if (withPlayer)
+            {
+                yield return Session.Start();
+            }
+
             _settings = LoadSettings();
             Assert.That(_settings, Is.Not.Null, "設定が読めない");
             _prefab = AssetDatabase.LoadAssetAtPath<GameObject>(_settings.outputPrefabPath);
@@ -54,7 +61,7 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Assert.That(vehicles, Has.Length.EqualTo(1), "車両が 1 台ではない（判定にならない）: " +
                 string.Join(", ", vehicles.Select(v => $"{v.gameObject.scene.name}:{v.transform.root.name}:{v.SyncMethod}")));
             yield return WaitReady(_vehicle);
-            yield return Steps(StepsPerSecond);
+            yield return PhysicsSeconds(1f);
         }
 
         private static UdonBehaviour[] Vehicles()
@@ -75,12 +82,47 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Assert.That(vehicle.GetProgramVariable(nameof(YakimaTankVehicle.isReady)), Is.True, "車両が動き出せる状態にならない");
         }
 
-        private static IEnumerator Steps(int count)
+        /// <summary>
+        /// 経過した物理の時間で待つ。物理の回数では数えない。ClientSim を始めると、刻み幅が ClientSim の設定（既定で毎秒 90 回）に変わるため。
+        /// </summary>
+        private static IEnumerator PhysicsSeconds(float seconds)
         {
-            for (int index = 0; index < count; index++)
+            double start = Time.fixedTimeAsDouble;
+            while (!Elapsed(start, seconds))
             {
                 yield return new WaitForFixedUpdate();
             }
+        }
+
+        /// <summary>刻み幅の足し算の丸めで、ちょうどの回数の後に 1 回余計に待たないよう、少しだけ手前で区切る。</summary>
+        private static bool Elapsed(double start, float seconds)
+        {
+            return Time.fixedTimeAsDouble - start >= seconds - 1e-4;
+        }
+
+        private float _fixedDeltaTime;
+        private int _targetFrameRate;
+
+        [SetUp]
+        public void RememberTiming()
+        {
+            _fixedDeltaTime = Time.fixedDeltaTime;
+            _targetFrameRate = Application.targetFrameRate;
+        }
+
+        /// <summary>基底の TearDown で ClientSim を終えた後に戻す。</summary>
+        [UnityTearDown]
+        public IEnumerator RestoreTimingAfterSession()
+        {
+            RestoreTiming();
+            yield break;
+        }
+
+        /// <summary>ClientSim は始めるときに刻み幅と目標のフレームレートを変え、終えても戻さない。後のテストの刻み幅が変わらないように戻す。</summary>
+        private void RestoreTiming()
+        {
+            Time.fixedDeltaTime = _fixedDeltaTime;
+            Application.targetFrameRate = _targetFrameRate;
         }
 
         private void SetInput(float throttle, float steer, float brake)
@@ -101,6 +143,246 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             return working;
         }
 
+        private UdonBehaviour Part(System.Type type)
+        {
+            UdonBehaviour part = YakimaTankRuntimeValues.FindBehaviour(_vehicleRoot, type);
+            Assert.That(part, Is.Not.Null, type.Name + " がない");
+            return part;
+        }
+
+        private static bool Flag(UdonBehaviour behaviour, string name)
+        {
+            return behaviour.GetProgramVariable(name) is bool value && value;
+        }
+
+        private Collider BoardingArea => Part(typeof(YakimaTankBoarding)).GetComponent<Collider>();
+
+        /// <summary>乗車の判定を Interact して、自分が座るのを待つ。</summary>
+        private IEnumerator Board()
+        {
+            Part(typeof(YakimaTankBoarding)).SendCustomEvent("_interact");
+            UdonBehaviour seat = Part(typeof(YakimaTankSeat));
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while (!Flag(seat, nameof(YakimaTankSeat.localSeated)) && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+            }
+
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.True, "座れない");
+        }
+
+        /// <summary>
+        /// 座ったまま ClientSim を終えると、ClientSim の後片付けが消えたプレイヤーの移動を戻そうとして例外を出す。
+        /// ClientSim を終える（基底の TearDown）前に降りておく。
+        /// </summary>
+        [TearDown]
+        public void LeaveSeat()
+        {
+            UdonBehaviour seat = _vehicleRoot == null ? null : YakimaTankRuntimeValues.FindBehaviour(_vehicleRoot, typeof(YakimaTankSeat));
+            if (seat != null && Flag(seat, nameof(YakimaTankSeat.localSeated)))
+            {
+                seat.GetComponent<VRC.SDK3.Components.VRCStation>().ExitStation(VRC.SDKBase.Networking.LocalPlayer);
+            }
+        }
+
+        /// <summary>VRCStation の標準の降り方（Space・ジャンプ）と同じ口で降りる。</summary>
+        private IEnumerator Exit()
+        {
+            var station = Part(typeof(YakimaTankSeat)).GetComponent<VRC.SDK3.Components.VRCStation>();
+            station.ExitStation(VRC.SDKBase.Networking.LocalPlayer);
+            yield return null;
+        }
+
+        /// <summary>入力アダプターを止めて、キーや手の入力が操作値を上書きしないようにする。</summary>
+        private void StopAdapters()
+        {
+            Part(typeof(YakimaTankDesktopInput)).SetProgramVariable(nameof(YakimaTankDesktopInput.isActive), false);
+            Part(typeof(YakimaTankVRInput)).SetProgramVariable(nameof(YakimaTankVRInput.isActive), false);
+        }
+
+        private void SetControl(float throttle, int gear, float steering, float brake)
+        {
+            UdonBehaviour control = Part(typeof(YakimaTankControlState));
+            control.SetProgramVariable(nameof(YakimaTankControlState.throttle), throttle);
+            control.SetProgramVariable(nameof(YakimaTankControlState.gear), gear);
+            control.SetProgramVariable(nameof(YakimaTankControlState.steering), steering);
+            control.SetProgramVariable(nameof(YakimaTankControlState.brake), brake);
+        }
+
+        [UnityTest]
+        public IEnumerator 乗ると自分の入力が有効になり乗車の判定が無効になる()
+        {
+            yield return Place(withPlayer: true);
+            Assert.That(BoardingArea.enabled, Is.True, "乗る前から判定が無効（判定にならない）");
+
+            yield return Board();
+
+            Assert.That(Flag(Part(typeof(YakimaTankDesktopInput)), nameof(YakimaTankDesktopInput.isActive)), Is.True, "Desktop の入力（ClientSim は Desktop）");
+            Assert.That(Flag(Part(typeof(YakimaTankVRInput)), nameof(YakimaTankVRInput.isActive)), Is.False);
+            Assert.That(Flag(_vehicle, nameof(YakimaTankVehicle.localDriverSeated)), Is.True);
+            Assert.That(BoardingArea.enabled, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator 座って操作値でアクセルを踏むと2秒に0点5メートル以上まっすぐ進む()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            StopAdapters();
+            Vector3 start = _vehicleRoot.transform.position;
+            Vector3 forward = _vehicleRoot.transform.forward;
+            SetControl(1f, YakimaTankControlState.GearForward, 0f, 0f);
+            yield return PhysicsSeconds(2f);
+
+            Vector3 moved = _vehicleRoot.transform.position - start;
+            float along = Vector3.Dot(moved, forward);
+            float side = Vector3.ProjectOnPlane(Vector3.ProjectOnPlane(moved, forward), Vector3.up).magnitude;
+            Assert.That(along, Is.GreaterThanOrEqualTo(0.5f));
+            Assert.That(side, Is.LessThan(along * 0.2f));
+        }
+
+        [UnityTest]
+        public IEnumerator 座って後退のギアでアクセルを踏むと2秒に0点5メートル以上後ろへ進む()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            StopAdapters();
+            Vector3 start = _vehicleRoot.transform.position;
+            Vector3 forward = _vehicleRoot.transform.forward;
+            SetControl(1f, YakimaTankControlState.GearReverse, 0f, 0f);
+            yield return PhysicsSeconds(2f);
+
+            Assert.That(Vector3.Dot(_vehicleRoot.transform.position - start, forward), Is.LessThanOrEqualTo(-0.5f));
+        }
+
+        [UnityTest]
+        public IEnumerator 座ってハンドルだけで2秒に右へ20度以上回りその場から1メートル以上動かない()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            StopAdapters();
+            Vector3 start = _vehicleRoot.transform.position;
+            Vector3 forward = _vehicleRoot.transform.forward;
+            SetControl(0f, YakimaTankControlState.GearForward, 1f, 0f);
+            yield return PhysicsSeconds(2f);
+
+            Assert.That(Vector3.SignedAngle(forward, _vehicleRoot.transform.forward, Vector3.up), Is.GreaterThanOrEqualTo(20f), "右へ回った角度");
+            Assert.That(Vector3.Distance(_vehicleRoot.transform.position, start), Is.LessThan(1f));
+        }
+
+        [UnityTest]
+        public IEnumerator 座ってブレーキの操作値で2秒以内に秒速0点2メートル未満まで止まる()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            StopAdapters();
+            SetControl(1f, YakimaTankControlState.GearForward, 0f, 0f);
+            yield return PhysicsSeconds(2f);
+            Assert.That(ForwardSpeed, Is.GreaterThan(1f), "止める前に速度が出ていない（判定にならない）");
+
+            SetControl(0f, YakimaTankControlState.GearForward, 0f, 1f);
+            double start = Time.fixedTimeAsDouble;
+            while (Body.velocity.magnitude >= 0.2f && !Elapsed(start, 2f))
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            Assert.That(Body.velocity.magnitude, Is.LessThan(0.2f));
+        }
+
+        [UnityTest]
+        public IEnumerator 秒速3メートル以上で前進してから降りると入力が止まり操作値が初期値に戻り5秒以内に止まり乗車の判定が戻る()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            StopAdapters();
+            SetControl(1f, YakimaTankControlState.GearForward, 0f, 0f);
+            double start = Time.fixedTimeAsDouble;
+            while (ForwardSpeed < 3f && !Elapsed(start, 10f))
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            Assert.That(ForwardSpeed, Is.GreaterThanOrEqualTo(3f), "降りる前に秒速 3 メートルに届かない（判定にならない）");
+
+            yield return Exit();
+
+            Assert.That(Flag(Part(typeof(YakimaTankSeat)), nameof(YakimaTankSeat.localSeated)), Is.False, "降りていない");
+            Assert.That(Flag(Part(typeof(YakimaTankDesktopInput)), nameof(YakimaTankDesktopInput.isActive)), Is.False);
+            Assert.That(Flag(Part(typeof(YakimaTankVRInput)), nameof(YakimaTankVRInput.isActive)), Is.False);
+            Assert.That(Flag(_vehicle, nameof(YakimaTankVehicle.localDriverSeated)), Is.False);
+            UdonBehaviour control = Part(typeof(YakimaTankControlState));
+            Assert.That(control.GetProgramVariable(nameof(YakimaTankControlState.throttle)), Is.EqualTo(0f));
+            Assert.That(control.GetProgramVariable(nameof(YakimaTankControlState.steering)), Is.EqualTo(0f));
+            Assert.That(control.GetProgramVariable(nameof(YakimaTankControlState.gear)), Is.EqualTo(YakimaTankControlState.GearForward));
+            Assert.That(_vehicle.GetProgramVariable(nameof(YakimaTankVehicle.throttleInput)), Is.EqualTo(0f));
+            Assert.That(BoardingArea.enabled, Is.True, "乗車の判定が戻らない");
+
+            double stopStart = Time.fixedTimeAsDouble;
+            while (Body.velocity.magnitude >= 0.2f && !Elapsed(stopStart, 5f))
+            {
+                yield return new WaitForFixedUpdate();
+            }
+
+            Assert.That(Body.velocity.magnitude, Is.LessThan(0.2f), "5 秒以内に止まらない");
+        }
+
+        [UnityTest]
+        public IEnumerator 再適用で座席のずらしとVRの調整値が座席と入力のUdonに入る()
+        {
+            yield return Place();
+            var offset = new Vector3(0.1f, 0.3f, -0.2f);
+
+            YakimaTankPlayTuning.Reapply(_vehicle, Working(w =>
+            {
+                w.seatOffset = offset;
+                w.maxTwistAngle = 30f;
+                w.deadzone = 0.2f;
+            }));
+
+            UdonBehaviour seat = Part(typeof(YakimaTankSeat));
+            UdonBehaviour vr = Part(typeof(YakimaTankVRInput));
+            Assert.That(seat.GetProgramVariable(nameof(YakimaTankSeat.seatOffset)), Is.EqualTo(offset));
+            Assert.That(vr.GetProgramVariable(nameof(YakimaTankVRInput.maxTwistAngle)), Is.EqualTo(30f));
+            Assert.That(vr.GetProgramVariable(nameof(YakimaTankVRInput.deadzone)), Is.EqualTo(0.2f));
+            Transform seatTransform = seat.transform;
+            var basePosition = (Vector3)seat.GetProgramVariable(nameof(YakimaTankSeat.basePosition));
+            Vector3 expected = seatTransform.parent.TransformPoint(basePosition) + seatTransform.rotation * offset;
+            Assert.That(Vector3.Distance(seatTransform.position, expected), Is.LessThan(1e-3f), "座席がずらした所にない");
+        }
+
+        [UnityTest]
+        public IEnumerator デバッグUIは付いて行く設定なら車体から見た位置を保ち留まる設定なら動かない()
+        {
+            yield return Place();
+            GameObject prefab = YakimaTankDebugPanelPlacement.LoadPrefab();
+            Assert.That(prefab, Is.Not.Null, "デバッグ UI の Prefab がない");
+            GameObject follower = YakimaTankPlayTuning.Spawn(prefab, Vector3.zero, Quaternion.identity);
+            UdonBehaviour followerUdon = YakimaTankRuntimeValues.FindBehaviour(follower, typeof(YakimaTankDebugPanel));
+            followerUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.vehicle), _vehicle);
+            var fixedPosition = new Vector3(5f, 1f, 5f);
+            GameObject stayer = YakimaTankPlayTuning.Spawn(prefab, fixedPosition, Quaternion.identity);
+            UdonBehaviour stayerUdon = YakimaTankRuntimeValues.FindBehaviour(stayer, typeof(YakimaTankDebugPanel));
+            stayerUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.vehicle), _vehicle);
+            stayerUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.followVehicle), false);
+
+            Vector3 start = _vehicleRoot.transform.position;
+            SetInput(1f, 0.3f, 0f);
+            yield return PhysicsSeconds(2f);
+
+            // パネルはそのフレームの LateUpdate で車体に付いて行く。yield return null の後は次のフレームの Update の後で、
+            // 車体だけが先に動いている（重いモデルほど 1 フレームのずれが大きい）。LateUpdate が済んだフレームの終わりで比べる。
+            yield return new WaitForEndOfFrame();
+            Assert.That(Vector3.Distance(_vehicleRoot.transform.position, start), Is.GreaterThan(0.5f), "車両が動いていない（判定にならない）");
+
+            var followPosition = (Vector3)followerUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.followPosition));
+            var followRotation = (Vector3)followerUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.followRotation));
+            Transform body = _vehicleRoot.transform;
+            Assert.That(Vector3.Distance(follower.transform.position, body.TransformPoint(followPosition)), Is.LessThan(0.01f));
+            Assert.That(Quaternion.Angle(follower.transform.rotation, body.rotation * Quaternion.Euler(followRotation)), Is.LessThan(0.1f));
+            Assert.That(stayer.transform.position, Is.EqualTo(fixedPosition));
+        }
+
         [UnityTest]
         public IEnumerator 置いて1秒で全部の転輪が接地し車体は傾かない()
         {
@@ -117,7 +399,7 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Vector3 start = _vehicleRoot.transform.position;
             Vector3 forward = _vehicleRoot.transform.forward;
             SetInput(1f, 0f, 0f);
-            yield return Steps(2 * StepsPerSecond);
+            yield return PhysicsSeconds(2f);
 
             Vector3 moved = _vehicleRoot.transform.position - start;
             float along = Vector3.Dot(moved, forward);
@@ -133,7 +415,7 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Vector3 start = _vehicleRoot.transform.position;
             Vector3 forward = _vehicleRoot.transform.forward;
             SetInput(-1f, 0f, 0f);
-            yield return Steps(2 * StepsPerSecond);
+            yield return PhysicsSeconds(2f);
 
             Assert.That(Vector3.Dot(_vehicleRoot.transform.position - start, forward), Is.LessThanOrEqualTo(-0.5f));
         }
@@ -143,10 +425,11 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         {
             yield return Place();
             YakimaTankPlayTuning.Reapply(_vehicle, Working(w => w.maxForwardSpeed = 3f));
-            yield return Steps(StepsPerSecond / 2);
+            yield return PhysicsSeconds(0.5f);
             SetInput(1f, 0f, 0f);
             float fastest = 0f;
-            for (int index = 0; index < 6 * StepsPerSecond; index++)
+            double start = Time.fixedTimeAsDouble;
+            while (!Elapsed(start, 6f))
             {
                 yield return new WaitForFixedUpdate();
                 fastest = Mathf.Max(fastest, ForwardSpeed);
@@ -163,7 +446,7 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Vector3 start = _vehicleRoot.transform.position;
             Vector3 forward = _vehicleRoot.transform.forward;
             SetInput(0f, 1f, 0f);
-            yield return Steps(2 * StepsPerSecond);
+            yield return PhysicsSeconds(2f);
 
             float turned = Vector3.SignedAngle(forward, _vehicleRoot.transform.forward, Vector3.up);
             Assert.That(turned, Is.GreaterThanOrEqualTo(20f), "右へ回った角度");
@@ -175,15 +458,14 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         {
             yield return Place();
             SetInput(1f, 0f, 0f);
-            yield return Steps(2 * StepsPerSecond);
+            yield return PhysicsSeconds(2f);
             Assert.That(ForwardSpeed, Is.GreaterThan(1f), "止める前に速度が出ていない（判定にならない）");
 
             SetInput(0f, 0f, 1f);
-            int steps = 0;
-            while (Body.velocity.magnitude >= 0.2f && steps < 2 * StepsPerSecond)
+            double start = Time.fixedTimeAsDouble;
+            while (Body.velocity.magnitude >= 0.2f && !Elapsed(start, 2f))
             {
                 yield return new WaitForFixedUpdate();
-                steps++;
             }
 
             Assert.That(Body.velocity.magnitude, Is.LessThan(0.2f));
@@ -196,7 +478,7 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Vector3 spawn = (Vector3)_vehicle.GetProgramVariable(nameof(YakimaTankVehicle.spawnPosition));
             int generation = (int)_vehicle.GetProgramVariable(nameof(YakimaTankVehicle.generation));
             SetInput(1f, 0.5f, 0f);
-            yield return Steps(2 * StepsPerSecond);
+            yield return PhysicsSeconds(2f);
             Assert.That(Vector3.Distance(_vehicleRoot.transform.position, spawn), Is.GreaterThan(0.3f), "走っていない（判定にならない）");
 
             YakimaTankPlayTuning.Reapply(_vehicle, Working(w => w.mass = 15000f));
@@ -217,12 +499,12 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         {
             yield return Place();
             SetInput(1f, 0f, 0f);
-            yield return Steps(2 * StepsPerSecond);
+            yield return PhysicsSeconds(2f);
             Assert.That(ForwardSpeed, Is.GreaterThan(1f), "止める前に速度が出ていない（判定にならない）");
 
             LogAssert.Expect(LogType.Error, new Regex(@"\[YakimaTank\].*mass"));
             YakimaTankPlayTuning.Reapply(_vehicle, Working(w => w.mass = 0f));
-            yield return Steps(StepsPerSecond);
+            yield return PhysicsSeconds(1f);
 
             Assert.That(_vehicle.GetProgramVariable(nameof(YakimaTankVehicle.isReady)), Is.False);
             Assert.That(_vehicleRoot.GetComponentsInChildren<WheelCollider>().Select(w => w.motorTorque), Is.All.EqualTo(0f), "駆動のトルクが残っている");
@@ -248,11 +530,96 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
                 Assert.That(wheels.Cast<Component>().All(w => w != null && w.transform.IsChildOf(_vehicleRoot.transform)), Is.True, field);
             }
 
-            yield return Steps(StepsPerSecond);
+            yield return PhysicsSeconds(1f);
             Vector3 start = _vehicleRoot.transform.position;
             SetInput(1f, 0f, 0f);
-            yield return Steps(2 * StepsPerSecond);
+            yield return PhysicsSeconds(2f);
             Assert.That(Vector3.Dot(_vehicleRoot.transform.position - start, _vehicleRoot.transform.forward), Is.GreaterThan(0.5f), "出し直した車両が進まない");
+        }
+
+        [UnityTest]
+        public IEnumerator 出し直すと前の車両を表示していたデバッグUIが新しい車両に付いて行きその操作値を表示する()
+        {
+            yield return Place();
+            GameObject panel = YakimaTankPlayTuning.Spawn(YakimaTankDebugPanelPlacement.LoadPrefab(), Vector3.zero, Quaternion.identity);
+            UdonBehaviour panelUdon = YakimaTankRuntimeValues.FindBehaviour(panel, typeof(YakimaTankDebugPanel));
+            panelUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.vehicle), _vehicle);
+            var followPosition = new Vector3(1f, 3f, -2f);
+            var followRotation = new Vector3(0f, 20f, 0f);
+            panelUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.followPosition), followPosition);
+            panelUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.followRotation), followRotation);
+
+            _vehicleRoot = YakimaTankPlayTuning.Respawn(_vehicleRoot, _prefab, Working(_ => { }));
+            _vehicle = YakimaTankRuntimeValues.FindVehicle(_vehicleRoot);
+            yield return PhysicsSeconds(1f);
+
+            Assert.That(panelUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.vehicle)), Is.SameAs(_vehicle), "パネルが新しい車両を表示していない");
+            Assert.That(panelUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.followVehicle)), Is.True);
+            Assert.That(panelUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.followPosition)), Is.EqualTo(followPosition));
+            Assert.That(panelUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.followRotation)), Is.EqualTo(followRotation));
+
+            Vector3 start = _vehicleRoot.transform.position;
+            const float steering = 0.5f;
+            Part(typeof(YakimaTankControlState)).SetProgramVariable(nameof(YakimaTankControlState.steering), steering);
+            SetInput(1f, 0.3f, 0f);
+            yield return PhysicsSeconds(2f);
+            yield return new WaitForEndOfFrame();
+            Assert.That(Vector3.Distance(_vehicleRoot.transform.position, start), Is.GreaterThan(0.5f), "出し直した車両が動いていない（判定にならない）");
+
+            Transform body = _vehicleRoot.transform;
+            Assert.That(Vector3.Distance(panel.transform.position, body.TransformPoint(followPosition)), Is.LessThan(0.01f), "新しい車両に付いて行かない");
+            Assert.That(Quaternion.Angle(panel.transform.rotation, body.rotation * Quaternion.Euler(followRotation)), Is.LessThan(0.1f));
+            var bar = (Transform)panelUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.steeringBar));
+            Assert.That(bar.localScale.x, Is.EqualTo(YakimaTankDebugPanel.GaugeWidth(steering, YakimaTankDebugPanel.GaugeHalfWidth)).Within(1e-5f), "新しい車両の操作値がゲージに出ない");
+            Assert.That(bar.localPosition.x, Is.EqualTo(YakimaTankDebugPanel.GaugeCenter(steering, YakimaTankDebugPanel.GaugeHalfWidth)).Within(1e-5f));
+        }
+
+        [UnityTest]
+        public IEnumerator 出し直しても別の車両を表示しているデバッグUIは変えない()
+        {
+            yield return Place();
+            GameObject other = YakimaTankPlayTuning.Spawn(_prefab, new Vector3(10f, SpawnHeight, 0f), Quaternion.identity);
+            UdonBehaviour otherVehicle = YakimaTankRuntimeValues.FindVehicle(other);
+            GameObject panel = YakimaTankPlayTuning.Spawn(YakimaTankDebugPanelPlacement.LoadPrefab(), Vector3.zero, Quaternion.identity);
+            UdonBehaviour panelUdon = YakimaTankRuntimeValues.FindBehaviour(panel, typeof(YakimaTankDebugPanel));
+            panelUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.vehicle), otherVehicle);
+
+            _vehicleRoot = YakimaTankPlayTuning.Respawn(_vehicleRoot, _prefab, Working(_ => { }));
+            _vehicle = YakimaTankRuntimeValues.FindVehicle(_vehicleRoot);
+            yield return null;
+
+            Assert.That(panelUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.vehicle)), Is.SameAs(otherVehicle));
+        }
+
+        [UnityTest]
+        public IEnumerator 物理の秒で待つと刻み幅が毎秒50回でも90回でも指定の秒数だけ物理が進む()
+        {
+            foreach (int rate in new[] { 50, 90 })
+            {
+                Time.fixedDeltaTime = 1f / rate;
+                yield return new WaitForFixedUpdate();
+                double start = Time.fixedTimeAsDouble;
+                yield return PhysicsSeconds(2f);
+
+                Assert.That(Time.fixedTimeAsDouble - start, Is.EqualTo(2.0).Within(0.5 / rate), $"毎秒 {rate} 回");
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator ClientSimで変わった刻み幅と目標のフレームレートを後処理で元に戻す()
+        {
+            // 前に流れたほかのテストが ClientSim の刻み幅を残していても判定になるよう、Unity の既定の値から始める。
+            const float before = 0.02f;
+            Time.fixedDeltaTime = before;
+            Application.targetFrameRate = -1;
+            RememberTiming();
+            yield return Place(withPlayer: true);
+            Assert.That(Time.fixedDeltaTime, Is.Not.EqualTo(before), "ClientSim が刻み幅を変えていない（判定にならない）");
+
+            yield return RestoreTimingAfterSession();
+
+            Assert.That(Time.fixedDeltaTime, Is.EqualTo(before));
+            Assert.That(Application.targetFrameRate, Is.EqualTo(-1));
         }
     }
 }

@@ -34,9 +34,16 @@ namespace Yakimannzyuu.YakimaTank
         public WheelCollider[] rightWheels;
         public bool applyOnStart = true;
 
+        /// <summary>自分が座っている間、物理の更新ごとに読む共通操作値。</summary>
+        public YakimaTankControlState control;
+
         [Header("状態（実行中に変わる）")]
         public bool isReady;
         public int generation;
+
+        /// <summary>自分（ローカルのプレイヤー）が座席に座っている。座席が書く。</summary>
+        public bool localDriverSeated;
+
         public float throttleInput;
         public float steerInput;
         public float brakeInput;
@@ -62,6 +69,19 @@ namespace Yakimannzyuu.YakimaTank
             throttleInput = Mathf.Clamp(throttle, -1f, 1f);
             steerInput = Mathf.Clamp(steer, -1f, 1f);
             brakeInput = Mathf.Clamp01(brake);
+        }
+
+        /// <summary>
+        /// 座席から呼ぶ。座っている間は共通操作値を読み、降りたら入力を 0 にして停止中のブレーキで止める。
+        /// 座っていない間は共通操作値を読まないので、SetDriveInput を直接使える。
+        /// </summary>
+        public void _SetLocalDriver(bool seated)
+        {
+            localDriverSeated = seated;
+            if (!seated)
+            {
+                SetDriveInput(0f, 0f, 0f);
+            }
         }
 
         /// <summary>
@@ -109,6 +129,11 @@ namespace Yakimannzyuu.YakimaTank
                 return;
             }
 
+            if (localDriverSeated && Utilities.IsValid(control))
+            {
+                SetDriveInput(ControlThrottle(control.throttle, control.gear), control.steering, control.brake);
+            }
+
             Transform bodyTransform = body.transform;
             float forwardSpeed = Vector3.Dot(body.velocity, bodyTransform.forward);
             int wheelCount = leftWheels.Length + rightWheels.Length;
@@ -135,6 +160,13 @@ namespace Yakimannzyuu.YakimaTank
             Vector3 up = bodyTransform.up;
             float yawRate = Vector3.Dot(body.angularVelocity, up) * Mathf.Rad2Deg;
             body.angularVelocity = body.angularVelocity + up * ((turnRate - yawRate) * Mathf.Deg2Rad);
+        }
+
+        /// <summary>共通操作値から走行の前後の入力へ。アクセルの量を、ギアの向きにする。</summary>
+        public static float ControlThrottle(float throttle, int gear)
+        {
+            float amount = Mathf.Clamp01(throttle);
+            return gear < 0 ? -amount : amount;
         }
 
         public static float CalculateDriveTorque(float throttle, float forwardSpeed, float driveTorque, float maxForwardSpeed, float maxReverseSpeed)
