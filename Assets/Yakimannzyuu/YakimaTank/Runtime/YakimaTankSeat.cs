@@ -38,7 +38,10 @@ namespace Yakimannzyuu.YakimaTank
             _ApplySeatOffset();
         }
 
-        /// <summary>自動の位置にずらしを足した所へ座席を置く。座席の向きは車体にそろえてあるので、ずらしは車体から見た向きになる。</summary>
+        /// <summary>
+        /// ずらしは localPosition に足さない。親（砲塔）に拡大縮小があると、ずらしが m にならないため。
+        /// 座席の向きは車体にそろえてあるので、向きを掛けたずらしは車体から見た向きになる。
+        /// </summary>
         public void _ApplySeatOffset()
         {
             Transform parent = transform.parent;

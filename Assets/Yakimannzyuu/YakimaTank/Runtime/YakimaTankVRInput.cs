@@ -152,7 +152,6 @@ namespace Yakimannzyuu.YakimaTank
         /// </summary>
         public static float TwistAngle(Quaternion origin, Quaternion current)
         {
-            // 車体の座標で見た回転の差を、前の軸まわりのねじりと、それ以外の振りに分け、ねじりだけを取る。
             Quaternion delta = current * Quaternion.Inverse(origin);
             float angle = 2f * Mathf.Atan2(delta.z, delta.w) * Mathf.Rad2Deg;
             if (angle > 180f)

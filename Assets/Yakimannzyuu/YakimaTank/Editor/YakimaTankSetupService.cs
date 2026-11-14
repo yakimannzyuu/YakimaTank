@@ -326,8 +326,10 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 solid.gameObject.layer = walkthrough;
             }
 
-            DisableSolidModelColliders(modelInstance, model, Record);
+            DisableSolidModelColliders(modelInstance, Record);
 
+            // 入力と共通操作値はルートに置かない。車両の Udon を同期させるとき（0.3.0 で Manual）に、
+            // 同期しないこれらと同じ GameObject で同期の方式が混ざり、VRChat の同期が正しく働かないことがあるため。
             Transform controls = EnsureChild(root.transform, ControlsName, out bool controlsCreated);
             YakimaTankControlState control = FindOrAdd<YakimaTankControlState>(controls.gameObject, out bool controlCreated);
             YakimaTankDesktopInput desktop = FindOrAdd<YakimaTankDesktopInput>(controls.gameObject, out bool desktopCreated);
@@ -427,7 +429,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         /// 元のモデルのトリガーでないコライダーを、生成 Prefab の中で無効にする（元のアセットは変えない）。
         /// Walkthrough にそろえる案は採らない。車体の物理に残って質量の分布が変わり、凸でない MeshCollider は動く Rigidbody の下で使えない。
         /// </summary>
-        private static void DisableSolidModelColliders(GameObject modelInstance, GameObject model, Action<string, bool> record)
+        private static void DisableSolidModelColliders(GameObject modelInstance, Action<string, bool> record)
         {
             foreach (Collider collider in modelInstance.GetComponentsInChildren<Collider>(true).Where(c => !c.isTrigger))
             {

@@ -34,13 +34,7 @@ Unity は導入したコミットを `Packages/packages-lock.json` に記録し�
 
 ## 使い方
 
-セットアップの手順と操作の一覧は、パッケージの [README](Assets/Yakimannzyuu/YakimaTank/README.md) にあります。0.2.0 の要点：
-
-- 乗る：戦車を Interact すると、砲塔の上の座席に座ります。降りるときは、Desktop は Space、VR はジャンプです。
-- Desktop：W・S で前進・後退、A・D で旋回します。
-- VR：左グリップを握って手首をひねると旋回、手前に引いたまま左トリガーで後退、左トリガーでアクセルです。
-- デバッグ UI：パッケージの `Runtime/YakimaTankDebugPanel.prefab` をシーンに置き、表示する車両を指定すると、操作の値を見られます。
-- まだ同期しません。ほかの人の画面では戦車は動きません。
+セットアップの手順と操作の一覧（Desktop・VR・デバッグ UI）は、パッケージの [README](Assets/Yakimannzyuu/YakimaTank/README.md) にあります。戦車を Interact すると砲塔の上の座席に座り、Desktop は Space、VR はジャンプで降ります。
 
 ## 開発に参加する
 

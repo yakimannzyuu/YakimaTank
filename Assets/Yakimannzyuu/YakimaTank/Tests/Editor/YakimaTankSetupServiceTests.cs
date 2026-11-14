@@ -420,13 +420,18 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             {
                 working.maxTurnRate = 45f;
                 working.centerOfMassOffset = new Vector3(0f, -0.3f, 0f);
+                working.seatOffset = new Vector3(0f, 0.2f, 0f);
+                working.maxTwistAngle = 30f;
                 Assert.That(_settings.maxTurnRate, Is.Not.EqualTo(45f), "保存する前に設定が変わっている");
+                Assert.That(_settings.seatOffset, Is.Not.EqualTo(working.seatOffset), "保存する前に座席のずらしが変わっている");
 
                 YakimaTankPlayTuning.SaveWorkingValues(working, _settings);
                 GameObject prefab = GenerateOrFail();
 
                 Assert.That(Value<float>(Vehicle(prefab), nameof(YakimaTankVehicle.maxTurnRate)), Is.EqualTo(45f));
                 Assert.That(Value<Vector3>(Vehicle(prefab), nameof(YakimaTankVehicle.centerOfMassOffset)), Is.EqualTo(new Vector3(0f, -0.3f, 0f)));
+                Assert.That(Value<Vector3>(Udon<YakimaTankSeat>(prefab), nameof(YakimaTankSeat.seatOffset)), Is.EqualTo(new Vector3(0f, 0.2f, 0f)));
+                Assert.That(Value<float>(Udon<YakimaTankVRInput>(prefab), nameof(YakimaTankVRInput.maxTwistAngle)), Is.EqualTo(30f));
             }
             finally
             {
