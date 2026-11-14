@@ -10,6 +10,7 @@
 | AI の作業手順と Editor 連携 | [Docs/04_Development/ai-workflow.md](Docs/04_Development/ai-workflow.md) |
 | ギミックの概要 | [Docs/01_Overview/overview.md](Docs/01_Overview/overview.md) |
 | 仕組みと図 | [Docs/03_Architecture/architecture.md](Docs/03_Architecture/architecture.md) |
+| これからの段階と境界（案） | [Docs/03_Architecture/prototype-plan.md](Docs/03_Architecture/prototype-plan.md) |
 | 仕様書の一覧 | [Docs/02_Specifications/README.md](Docs/02_Specifications/README.md) |
 | この案件の決定（ADR） | [Docs/05_Decisions/project/README.md](Docs/05_Decisions/project/README.md) |
 | 共通ルールの理由（ADR） | [Docs/05_Decisions/rules/README.md](Docs/05_Decisions/rules/README.md) |
