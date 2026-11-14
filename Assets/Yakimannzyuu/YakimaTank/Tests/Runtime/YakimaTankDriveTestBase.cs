@@ -575,6 +575,23 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator 出し直しても別の車両を表示しているデバッグUIは変えない()
+        {
+            yield return Place();
+            GameObject other = YakimaTankPlayTuning.Spawn(_prefab, new Vector3(10f, SpawnHeight, 0f), Quaternion.identity);
+            UdonBehaviour otherVehicle = YakimaTankRuntimeValues.FindVehicle(other);
+            GameObject panel = YakimaTankPlayTuning.Spawn(YakimaTankDebugPanelPlacement.LoadPrefab(), Vector3.zero, Quaternion.identity);
+            UdonBehaviour panelUdon = YakimaTankRuntimeValues.FindBehaviour(panel, typeof(YakimaTankDebugPanel));
+            panelUdon.SetProgramVariable(nameof(YakimaTankDebugPanel.vehicle), otherVehicle);
+
+            _vehicleRoot = YakimaTankPlayTuning.Respawn(_vehicleRoot, _prefab, Working(_ => { }));
+            _vehicle = YakimaTankRuntimeValues.FindVehicle(_vehicleRoot);
+            yield return null;
+
+            Assert.That(panelUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.vehicle)), Is.SameAs(otherVehicle));
+        }
+
+        [UnityTest]
         public IEnumerator 物理の秒で待つと刻み幅が毎秒50回でも90回でも指定の秒数だけ物理が進む()
         {
             foreach (int rate in new[] { 50, 90 })
@@ -599,7 +616,7 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             yield return Place(withPlayer: true);
             Assert.That(Time.fixedDeltaTime, Is.Not.EqualTo(before), "ClientSim が刻み幅を変えていない（判定にならない）");
 
-            RestoreTiming();
+            yield return RestoreTimingAfterSession();
 
             Assert.That(Time.fixedDeltaTime, Is.EqualTo(before));
             Assert.That(Application.targetFrameRate, Is.EqualTo(-1));
