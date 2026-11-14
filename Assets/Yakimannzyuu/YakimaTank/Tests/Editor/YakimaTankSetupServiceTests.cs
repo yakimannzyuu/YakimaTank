@@ -287,6 +287,29 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void 車体自身にメッシュがなければ車体のコライダーは子のメッシュから砲塔と砲身を除いて作る()
+        {
+            _settings = _workspace.CreateMeshlessParentSettings(_workspace.CreateMeshlessParentModel());
+            GameObject prefab = GenerateOrFail();
+            BoxCollider collider = prefab.transform.Find("Colliders/Body").GetComponent<BoxCollider>();
+            Bounds box = new Bounds(collider.center, collider.size);
+
+            Assert.That(box.max.z, Is.EqualTo(TestWorkspace.MeshlessHullFront).Within(1e-4f), "前端が車体のメッシュの前端（砲身の先 5 ではない）");
+            Assert.That(box.max.y, Is.EqualTo(TestWorkspace.MeshlessHullTop).Within(1e-4f), "上端が車体のメッシュの上端（砲塔の上端 1.7 ではない）");
+        }
+
+        [Test]
+        public void 砲塔自身にメッシュがなければ座席の自動の位置は砲身を除いた砲塔のメッシュの上面の中央()
+        {
+            _settings = _workspace.CreateMeshlessParentSettings(_workspace.CreateMeshlessParentModel());
+            GameObject prefab = GenerateOrFail();
+            Transform seat = Udon<YakimaTankSeat>(prefab).transform;
+
+            Vector3 position = prefab.transform.InverseTransformPoint(seat.position);
+            Assert.That(Vector3.Distance(position, TestWorkspace.MeshlessTurretTop), Is.LessThan(1e-3f), "座席の位置 " + position.ToString("F3"));
+        }
+
+        [Test]
         public void 生成しても元のモデルのアセットは変わらない()
         {
             string before = TestWorkspace.Hash(AssetDatabase.GetAssetPath(_model));

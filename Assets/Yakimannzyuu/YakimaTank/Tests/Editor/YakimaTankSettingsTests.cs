@@ -292,6 +292,22 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void 車体自身にメッシュがなく砲塔と砲身を除くと車体の下にメッシュがなければ生成の前にErrorになる()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateMeshlessParentSettings(_workspace.CreateMeshlessParentModel(withHullMesh: false));
+
+            Assert.That(YakimaTankSetupValidator.Validate(settings).Any(d => d.Severity == SetupSeverity.Error && d.Field == nameof(settings.body)), Is.True);
+        }
+
+        [Test]
+        public void 車体自身にメッシュがなくても砲塔と砲身を除いて車体のメッシュがあれば検証を通る()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateMeshlessParentSettings(_workspace.CreateMeshlessParentModel());
+
+            Assert.That(YakimaTankSetupValidator.HasErrors(YakimaTankSetupValidator.Validate(settings)), Is.False);
+        }
+
+        [Test]
         public void 砲塔の対応がなければ座席を車体に置くWarningになる()
         {
             YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);

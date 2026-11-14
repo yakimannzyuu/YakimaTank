@@ -277,10 +277,14 @@ namespace Yakimannzyuu.YakimaTank.Editor
             List<WheelSpec> right = settings.rightWheels.Select(w => Wheel(Resolve(w), root.transform, settings)).ToList();
             float wheelCenterHeight = left.Concat(right).Average(w => w.Center.y);
 
+            Transform turret = settings.turret == null ? null : Resolve(settings.turret);
+            Transform barrel = settings.barrel == null ? null : Resolve(settings.barrel);
+
             // 子（砲塔・砲身）を含めると、砲身の分だけ前に見えない箱が張り出すので、車体自身のメッシュから作る。
-            if (!YakimaTankBounds.TryGetOwnBounds(Resolve(settings.body), root.transform, out Bounds bodyBounds))
+            // 車体自身にメッシュがなければ子から求めるが、そのときも砲塔と砲身の階層は除く。
+            if (!YakimaTankBounds.TryGetOwnBounds(Resolve(settings.body), root.transform, out Bounds bodyBounds, turret, barrel))
             {
-                throw new InvalidOperationException("車体にメッシュがないので、車体のコライダーの大きさを決められません。");
+                throw new InvalidOperationException("砲塔と砲身を除くと車体にメッシュがないので、車体のコライダーの大きさを決められません。");
             }
 
             Bounds box = YakimaTankSetupMath.BodyColliderBounds(bodyBounds, wheelCenterHeight);
@@ -362,7 +366,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             YakimaTankBoarding boarding = FindOrAdd<YakimaTankBoarding>(boardingTransform.gameObject, out bool boardingUdonCreated);
             Record(BoardingName, boardingCreated || boardingUdonCreated);
 
-            Transform seatParent = Resolve(settings.turret != null ? settings.turret : settings.body);
+            Transform seatParent = turret != null ? turret : Resolve(settings.body);
             bool seatCreated = existingSeat == null;
             Transform seatTransform = seatCreated ? CreateChild(seatParent, SeatName).transform : existingSeat.transform;
             seatTransform.SetParent(seatParent, false);
@@ -387,7 +391,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             seat.control = control;
             seat.desktopInput = desktop;
             seat.vrInput = vr;
-            seat.basePosition = SeatBasePosition(seatParent, root.transform);
+            seat.basePosition = SeatBasePosition(seatParent, root.transform, barrel);
             YakimaTankRuntimeValues.WriteToProxy(settings, seat);
             seatTransform.position = seatParent.TransformPoint(seat.basePosition) + seatTransform.rotation * settings.seatOffset;
             Record(SeatName, seatCreated);
@@ -415,11 +419,12 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         /// <summary>
         /// 座席の自動の位置。砲塔自身のメッシュの範囲の上面の中央を、親（砲塔）の座標で返す。
-        /// 子（砲身）を含めると前へずれるので含めない。メッシュがなければ親の原点。
+        /// 子（砲身）を含めると前へずれるので含めない。砲塔自身にメッシュがなければ、砲身の階層を除いた子から求める。
+        /// メッシュがなければ親の原点。
         /// </summary>
-        private static Vector3 SeatBasePosition(Transform seatParent, Transform root)
+        private static Vector3 SeatBasePosition(Transform seatParent, Transform root, Transform barrel)
         {
-            Vector3 top = YakimaTankBounds.TryGetOwnBounds(seatParent, root, out Bounds bounds)
+            Vector3 top = YakimaTankBounds.TryGetOwnBounds(seatParent, root, out Bounds bounds, barrel)
                 ? new Vector3(bounds.center.x, bounds.max.y, bounds.center.z)
                 : root.InverseTransformPoint(seatParent.position);
             return seatParent.InverseTransformPoint(root.TransformPoint(top));
