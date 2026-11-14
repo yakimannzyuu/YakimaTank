@@ -21,8 +21,27 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 throw new ArgumentNullException(nameof(vehicle), "再適用する車両がありません。");
             }
 
-            YakimaTankRuntimeValues.WriteToUdon(values, vehicle);
+            WriteAll(values, vehicle.gameObject);
             vehicle.SendCustomEvent(nameof(YakimaTankVehicle._ApplySettingsAndReset));
+        }
+
+        /// <summary>車両と、その座席・VR の入力に値を書き、座席のずらしを入れ直す。</summary>
+        private static void WriteAll(YakimaTankSetupSettings values, GameObject root)
+        {
+            foreach (var group in YakimaTankRuntimeValues.Groups)
+            {
+                UdonBehaviour target = YakimaTankRuntimeValues.FindBehaviour(root, group.Key);
+                if (target != null)
+                {
+                    YakimaTankRuntimeValues.WriteToUdon(values, target);
+                }
+            }
+
+            UdonBehaviour seat = YakimaTankRuntimeValues.FindBehaviour(root, typeof(YakimaTankSeat));
+            if (seat != null)
+            {
+                seat.SendCustomEvent(nameof(YakimaTankSeat._ApplySeatOffset));
+            }
         }
 
         public static GameObject Respawn(GameObject current, GameObject prefab, YakimaTankSetupSettings values)
@@ -57,7 +76,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             clone.name = prefab.name;
             RegisterAll(clone);
             UdonBehaviour vehicle = YakimaTankRuntimeValues.FindVehicle(clone);
-            YakimaTankRuntimeValues.WriteToUdon(values, vehicle);
+            WriteAll(values, clone);
             vehicle.SetProgramVariable(nameof(YakimaTankVehicle.applyOnStart), false);
             clone.transform.SetParent(parent, true);
             Object.Destroy(holder);

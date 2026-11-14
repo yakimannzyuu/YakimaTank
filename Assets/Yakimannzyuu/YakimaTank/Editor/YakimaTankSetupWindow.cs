@@ -14,6 +14,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
     public sealed class YakimaTankSetupWindow : EditorWindow
     {
         private static readonly string[] RuntimeFieldNames = YakimaTankRuntimeValues.Names.ToArray();
+        private static readonly string[] SeatFieldNames = YakimaTankRuntimeValues.SeatNames.ToArray();
+        private static readonly string[] VRInputFieldNames = YakimaTankRuntimeValues.VRInputNames.ToArray();
 
         private static readonly string[] SuspensionFieldNames =
         {
@@ -52,7 +54,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
-            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃・同期・乗車と入力の割り当て。いまできるのは走行（SetDriveInput）まで。", MessageType.Info);
+            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃・同期。いまできるのは、1 人で乗って Desktop と VR で走ることまで。", MessageType.Info);
             settings = (YakimaTankSetupSettings)EditorGUILayout.ObjectField("設定アセット", settings, typeof(YakimaTankSetupSettings), false);
             if (settings == null)
             {
@@ -116,16 +118,12 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 settings.body = TransformPopup("車体", settings.body, nodes, paths, true);
                 settings.leftWheels = TransformList("左の転輪", settings.leftWheels, nodes, paths);
                 settings.rightWheels = TransformList("右の転輪", settings.rightWheels, nodes, paths);
-                settings.turret = TransformPopup("砲塔（記録だけ）", settings.turret, nodes, paths, true);
+                settings.turret = TransformPopup("砲塔（座席を置く）", settings.turret, nodes, paths, true);
                 settings.barrel = TransformPopup("砲身（記録だけ）", settings.barrel, nodes, paths, true);
             }
 
             serialized.Update();
-            EditorGUILayout.LabelField("走行（Play 中に再適用できる）", EditorStyles.boldLabel);
-            foreach (string name in RuntimeFieldNames)
-            {
-                EditorGUILayout.PropertyField(serialized.FindProperty(name));
-            }
+            DrawRuntimeFields(serialized);
 
             EditorGUILayout.LabelField("足回り（生成で反映）", EditorStyles.boldLabel);
             foreach (string name in SuspensionFieldNames)
@@ -142,6 +140,22 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 settings.outputPrefabPath = $"Assets/YakimaTank Generated/{settings.modelPrefab.name}.prefab";
                 EditorUtility.SetDirty(settings);
             }
+        }
+
+        private static void DrawRuntimeFields(SerializedObject serialized)
+        {
+            void Section(string label, IEnumerable<string> names)
+            {
+                EditorGUILayout.LabelField(label, EditorStyles.boldLabel);
+                foreach (string name in names)
+                {
+                    EditorGUILayout.PropertyField(serialized.FindProperty(name));
+                }
+            }
+
+            Section("走行（Play 中に再適用できる）", RuntimeFieldNames);
+            Section("座席（Play 中に再適用できる）", SeatFieldNames);
+            Section("操作（VR。Play 中に再適用できる）", VRInputFieldNames);
         }
 
         private Transform TransformPopup(string label, Transform current, Transform[] nodes, string[] paths, bool allowNone)
@@ -258,11 +272,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             var serialized = new SerializedObject(working);
             serialized.Update();
-            foreach (string name in RuntimeFieldNames)
-            {
-                EditorGUILayout.PropertyField(serialized.FindProperty(name));
-            }
-
+            DrawRuntimeFields(serialized);
             serialized.ApplyModifiedProperties();
             EditorGUILayout.BeginHorizontal();
             if (GUILayout.Button("再適用"))

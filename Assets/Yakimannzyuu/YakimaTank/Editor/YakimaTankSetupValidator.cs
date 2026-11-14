@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -30,6 +31,25 @@ namespace Yakimannzyuu.YakimaTank.Editor
     /// <summary>生成の前の検証。Error が 1 つでもあれば生成しない。未実装の機能は Warning にして、合格と区別する。</summary>
     public static class YakimaTankSetupValidator
     {
+        /// <summary>戦車とプレイヤーの当たりを外すのに使う、VRChat の標準のレイヤー。</summary>
+        public const string WalkthroughLayer = "Walkthrough";
+
+        /// <summary>テストで、レイヤーがないプロジェクトを再現するための口。</summary>
+        internal static Func<string, int> LayerLookupForTests;
+
+        public static int FindLayer(string name)
+        {
+            return LayerLookupForTests != null ? LayerLookupForTests(name) : LayerMask.NameToLayer(name);
+        }
+
+        /// <summary>元のモデルの中で、トリガーでないコライダー。生成 Prefab の中で無効にする。</summary>
+        public static IEnumerable<Collider> SolidModelColliders(GameObject model)
+        {
+            return model == null
+                ? Enumerable.Empty<Collider>()
+                : model.GetComponentsInChildren<Collider>(true).Where(c => !c.isTrigger);
+        }
+
         public static List<SetupDiagnostic> Validate(YakimaTankSetupSettings settings)
         {
             var diagnostics = new List<SetupDiagnostic>();
@@ -46,6 +66,11 @@ namespace Yakimannzyuu.YakimaTank.Editor
             {
                 Error(nameof(settings.schemaVersion), $"設定の版 {settings.schemaVersion} は、この版の YakimaTank（{YakimaTankSetupSettings.CurrentSchemaVersion}）では読めません。");
                 return diagnostics;
+            }
+
+            if (FindLayer(WalkthroughLayer) < 0)
+            {
+                Error(string.Empty, $"レイヤー {WalkthroughLayer} がありません。VRChat のレイヤーの設定（VRChat SDK の Control Panel の Builder にある Setup Layers）をしてください。戦車とプレイヤーの当たりを外すのに使います。");
             }
 
             ValidateModel(settings, Error, Warning);
@@ -118,16 +143,21 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 }
             }
 
-            if (settings.turret != null)
+            if (settings.turret == null)
             {
-                if (!BelongsTo(settings.turret, model, modelPath))
-                {
-                    error(nameof(settings.turret), "砲塔が、元のモデルの中を指していません。");
-                }
-                else
-                {
-                    warning(nameof(settings.turret), "砲塔は記録だけです。砲塔の操作はまだありません。");
-                }
+                warning(nameof(settings.turret), "砲塔の対応がないので、座席を車体に置きます。");
+            }
+            else if (!BelongsTo(settings.turret, model, modelPath))
+            {
+                error(nameof(settings.turret), "砲塔が、元のモデルの中を指していません。");
+            }
+
+            List<string> solid = SolidModelColliders(model).Select(c => YakimaTankModelPaths.GetPath(c.transform, model.transform) + " の " + c.GetType().Name).ToList();
+            if (solid.Count > 0)
+            {
+                warning(nameof(settings.modelPrefab),
+                    "元のモデルにトリガーでないコライダーがあります。プレイヤーと当たり、車体の物理にも入るので、生成 Prefab の中で無効にします（元のアセットは変えません）: " +
+                    string.Join(", ", solid));
             }
 
             if (settings.barrel != null)
@@ -208,13 +238,31 @@ namespace Yakimannzyuu.YakimaTank.Editor
             NotNegative(nameof(settings.suspensionDamper), settings.suspensionDamper);
             Positive(nameof(settings.forwardFrictionStiffness), settings.forwardFrictionStiffness);
             Positive(nameof(settings.sidewaysFrictionStiffness), settings.sidewaysFrictionStiffness);
-            foreach (float component in new[] { settings.centerOfMassOffset.x, settings.centerOfMassOffset.y, settings.centerOfMassOffset.z })
+            void Finite(string field, Vector3 value)
             {
-                if (!IsFinite(component))
+                if (!IsFinite(value.x) || !IsFinite(value.y) || !IsFinite(value.z))
                 {
-                    error(nameof(settings.centerOfMassOffset), "数にしてください。");
+                    error(field, "数にしてください。");
                 }
             }
+
+            void Range(string field, float value, float min, float max, bool includeMin, bool includeMax)
+            {
+                bool aboveMin = includeMin ? value >= min : value > min;
+                bool belowMax = includeMax ? value <= max : value < max;
+                if (!IsFinite(value) || !aboveMin || !belowMax)
+                {
+                    error(field, $"{(includeMin ? "[" : "(")}{min}, {max}{(includeMax ? "]" : ")")} の範囲にしてください（今は {value}）。");
+                }
+            }
+
+            Finite(nameof(settings.centerOfMassOffset), settings.centerOfMassOffset);
+            Finite(nameof(settings.seatOffset), settings.seatOffset);
+            Range(nameof(settings.gripThreshold), settings.gripThreshold, 0f, 1f, false, true);
+            Range(nameof(settings.maxTwistAngle), settings.maxTwistAngle, 0f, 180f, false, true);
+            Positive(nameof(settings.maxPushDistance), settings.maxPushDistance);
+            Range(nameof(settings.reverseThreshold), settings.reverseThreshold, 0f, 1f, true, false);
+            Range(nameof(settings.deadzone), settings.deadzone, 0f, 1f, true, false);
         }
 
         private static bool IsFinite(float value)

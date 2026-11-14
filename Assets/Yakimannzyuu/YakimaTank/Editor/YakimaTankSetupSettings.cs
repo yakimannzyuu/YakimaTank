@@ -7,9 +7,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
     /// シーンのインスタンスは指さない。生成物から逆算しない。
     /// </summary>
     [CreateAssetMenu(fileName = "YakimaTankSetup", menuName = "YakimaTank/Setup Settings")]
-    public sealed class YakimaTankSetupSettings : ScriptableObject
+    public sealed class YakimaTankSetupSettings : ScriptableObject, ISerializationCallbackReceiver
     {
-        public const int CurrentSchemaVersion = 1;
+        public const int CurrentSchemaVersion = 2;
 
         public int schemaVersion = CurrentSchemaVersion;
 
@@ -24,7 +24,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public Transform[] leftWheels = new Transform[0];
         public Transform[] rightWheels = new Transform[0];
 
-        [Tooltip("記録だけ。砲塔の操作はまだない")]
+        [Tooltip("座席を置く。なければ車体に置く。砲塔の操作はまだない")]
         public Transform turret;
 
         [Tooltip("記録だけ。砲身の操作はまだない")]
@@ -40,6 +40,26 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public float maxTurnRate = 30f;
         public float turnAcceleration = 90f;
         public Vector3 centerOfMassOffset;
+
+        [Header("座席（Play 中に再適用できる）")]
+        [Tooltip("砲塔の範囲の上面の中央（自動の位置）から、車体から見た向きでずらす量（m）")]
+        public Vector3 seatOffset;
+
+        [Header("操作（VR。Play 中に再適用できる）")]
+        [Tooltip("グリップ・トリガーを握った（引いた）とみなす値（0〜1）")]
+        public float gripThreshold = 0.5f;
+
+        [Tooltip("ねじりの最大角（度）。これだけねじると入力が端になる")]
+        public float maxTwistAngle = 45f;
+
+        [Tooltip("前後の最大距離（m）。これだけ動かすと入力が端になる")]
+        public float maxPushDistance = 0.15f;
+
+        [Tooltip("前進後退入力（-1〜1）がこれより後ろにある間は後退のギア")]
+        public float reverseThreshold = 0.5f;
+
+        [Tooltip("ねじり・前後・トリガーを -1〜1・0〜1 にした後に掛ける不感帯")]
+        public float deadzone = 0.1f;
 
         [Header("足回り（生成で反映）")]
         [Tooltip("0 なら転輪のメッシュから求める")]
@@ -66,5 +86,24 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public bool hasPlacement;
         public Vector3 placementPosition;
         public Vector3 placementRotation;
+
+        public void OnBeforeSerialize()
+        {
+        }
+
+        /// <summary>読み込んだときに今の版へ移す。書き戻しは、利用者が次に保存したとき。</summary>
+        public void OnAfterDeserialize()
+        {
+            schemaVersion = Migrate(schemaVersion);
+        }
+
+        /// <summary>
+        /// 版 1 → 2：足した座席と VR の項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
+        /// 走行・足回りの値と参照は名前を変えていないので、そのまま読める。版だけを上げればよい。
+        /// </summary>
+        public static int Migrate(int version)
+        {
+            return version == 1 ? 2 : version;
+        }
     }
 }

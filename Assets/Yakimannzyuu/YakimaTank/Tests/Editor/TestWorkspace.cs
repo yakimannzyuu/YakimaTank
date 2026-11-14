@@ -19,6 +19,10 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
     {
         public const string Root = "Assets/__YakimaTankTests";
         public const float WheelRadius = 0.4f;
+        public const string TurretPath = "Hull/Turret";
+
+        /// <summary>砲塔の上面の高さ。車体の上 1.5 m に、縦 0.6 を車体の 0.8 倍した 0.48 の半分を足す。</summary>
+        public const float TurretTop = 1.74f;
 
         public TestWorkspace(string name = null)
         {
@@ -39,8 +43,11 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
 
         public string OutputPath => Folder + "/Generated/Vehicle.prefab";
 
-        /// <summary>rootRotation は、FBX の軸の変換のようにモデルのルート自身が持つ回転。</summary>
-        public GameObject CreateModel(string name = "TestTank", Quaternion? rootRotation = null)
+        /// <summary>
+        /// rootRotation は、FBX の軸の変換のようにモデルのルート自身が持つ回転。
+        /// withColliders なら、車体にトリガーでない BoxCollider、砲塔にトリガーの SphereCollider を残す（コライダー付きのモデル）。
+        /// </summary>
+        public GameObject CreateModel(string name = "TestTank", Quaternion? rootRotation = null, bool withColliders = false)
         {
             Scene preview = EditorSceneManager.NewPreviewScene();
             try
@@ -48,7 +55,12 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 GameObject root = Node(preview, name, null, Vector3.zero);
                 root.transform.localRotation = rootRotation ?? Quaternion.identity;
                 GameObject hull = Primitive(preview, PrimitiveType.Cube, "Hull", root.transform, new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
-                Primitive(preview, PrimitiveType.Cube, "Turret", hull.transform, new Vector3(0f, 0.75f, 0f), new Vector3(0.6f, 0.6f, 0.4f));
+                GameObject turret = Primitive(preview, PrimitiveType.Cube, "Turret", hull.transform, new Vector3(0f, 0.75f, 0f), new Vector3(0.6f, 0.6f, 0.4f));
+                if (withColliders)
+                {
+                    hull.AddComponent<BoxCollider>();
+                    turret.AddComponent<SphereCollider>().isTrigger = true;
+                }
                 GameObject left = Node(preview, "Left", root.transform, Vector3.zero);
                 GameObject right = Node(preview, "Right", root.transform, Vector3.zero);
                 foreach (float z in new[] { -1.2f, 0f, 1.2f })
@@ -102,7 +114,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             settings.body = model.transform.Find("Hull");
             settings.leftWheels = Children(model.transform.Find("Left"));
             settings.rightWheels = Children(model.transform.Find("Right"));
-            settings.turret = null;
+            settings.turret = model.transform.Find(TurretPath);
             settings.barrel = null;
             settings.outputPrefabPath = OutputPath;
             AssetDatabase.CreateAsset(settings, Folder + "/" + name + ".asset");

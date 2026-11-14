@@ -22,18 +22,116 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         [TearDown]
         public void TearDown()
         {
+            YakimaTankSetupValidator.LayerLookupForTests = null;
             _workspace.Dispose();
         }
 
         [Test]
-        public void 走行の値は設定と車両のUdonに同じ名前と型である()
+        public void 再適用できる値は設定と受けるUdonに同じ名前と型である()
         {
-            foreach (string name in YakimaTankRuntimeValues.Names)
+            foreach (var group in YakimaTankRuntimeValues.Groups)
             {
-                Assert.That(YakimaTankRuntimeValues.SettingsField(name), Is.Not.Null, "設定に " + name + " がない");
-                Assert.That(YakimaTankRuntimeValues.VehicleField(name), Is.Not.Null, "車両に " + name + " がない");
-                Assert.That(YakimaTankRuntimeValues.SettingsField(name).FieldType, Is.EqualTo(YakimaTankRuntimeValues.VehicleField(name).FieldType), name);
+                foreach (string name in group.Value)
+                {
+                    Assert.That(YakimaTankRuntimeValues.SettingsField(name), Is.Not.Null, "設定に " + name + " がない");
+                    Assert.That(YakimaTankRuntimeValues.BehaviourField(group.Key, name), Is.Not.Null, group.Key.Name + " に " + name + " がない");
+                    Assert.That(YakimaTankRuntimeValues.SettingsField(name).FieldType, Is.EqualTo(YakimaTankRuntimeValues.BehaviourField(group.Key, name).FieldType), name);
+                }
             }
+        }
+
+        [Test]
+        public void VRの調整値の初期値は仕様の仮の値()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            Assert.That(settings.gripThreshold, Is.EqualTo(0.5f));
+            Assert.That(settings.maxTwistAngle, Is.EqualTo(45f));
+            Assert.That(settings.maxPushDistance, Is.EqualTo(0.15f));
+            Assert.That(settings.reverseThreshold, Is.EqualTo(0.5f));
+            Assert.That(settings.deadzone, Is.EqualTo(0.1f));
+            Assert.That(settings.seatOffset, Is.EqualTo(Vector3.zero));
+        }
+
+        [Test]
+        public void 版1の設定を読み込むと版2に移り走行と足回りの値と参照を保って足した項目は既定値になる()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model, "Old");
+            settings.mass = 1234f;
+            settings.suspensionDistance = 0.3f;
+            settings.gripThreshold = 0.9f;
+            settings.seatOffset = Vector3.one;
+            EditorUtility.SetDirty(settings);
+            AssetDatabase.SaveAssetIfDirty(settings);
+            string path = AssetDatabase.GetAssetPath(settings);
+
+            // 版 1 のアセットを再現する。版 2 で足した行を消し、版の番号を 1 にする。
+            string[] added = { "seatOffset", "gripThreshold", "maxTwistAngle", "maxPushDistance", "reverseThreshold", "deadzone" };
+            string[] lines = System.IO.File.ReadAllLines(path)
+                .Where(line => !added.Any(name => line.TrimStart().StartsWith(name + ":")))
+                .Select(line => line.TrimStart().StartsWith("schemaVersion:") ? "  schemaVersion: 1" : line)
+                .ToArray();
+            Assert.That(lines.Any(line => line.Contains("gripThreshold")), Is.False, "版 2 の項目が残っている（判定にならない）");
+            System.IO.File.WriteAllLines(path, lines);
+            Resources.UnloadAsset(settings);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+
+            var migrated = AssetDatabase.LoadAssetAtPath<YakimaTankSetupSettings>(path);
+
+            Assert.That(migrated.schemaVersion, Is.EqualTo(2));
+            Assert.That(migrated.mass, Is.EqualTo(1234f));
+            Assert.That(migrated.suspensionDistance, Is.EqualTo(0.3f));
+            Assert.That(migrated.body, Is.SameAs(_model.transform.Find("Hull")));
+            Assert.That(migrated.leftWheels, Has.Length.EqualTo(3));
+            Assert.That(migrated.gripThreshold, Is.EqualTo(0.5f), "足した項目が既定値になっていない");
+            Assert.That(migrated.seatOffset, Is.EqualTo(Vector3.zero));
+            Assert.That(YakimaTankSetupValidator.Validate(migrated).Where(d => d.Severity == SetupSeverity.Error), Is.Empty);
+        }
+
+        [Test]
+        public void この版より新しい設定の版はErrorになる()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            settings.schemaVersion = YakimaTankSetupSettings.CurrentSchemaVersion + 1;
+            Assert.That(YakimaTankSetupValidator.Validate(settings).Any(d => d.Severity == SetupSeverity.Error && d.Field == nameof(settings.schemaVersion)), Is.True);
+        }
+
+        [Test]
+        public void Walkthroughのレイヤーがなければ生成の前にErrorになる()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            YakimaTankSetupValidator.LayerLookupForTests = name => -1;
+
+            var diagnostics = YakimaTankSetupValidator.Validate(settings);
+
+            Assert.That(diagnostics.Any(d => d.Severity == SetupSeverity.Error && d.Message.Contains(YakimaTankSetupValidator.WalkthroughLayer)), Is.True);
+        }
+
+        [Test]
+        public void 元のモデルのトリガーでないコライダーは無効にするものを一覧にしたWarningになる()
+        {
+            GameObject withColliders = _workspace.CreateModel("ColliderTank", withColliders: true);
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(withColliders, "ColliderSettings");
+
+            var diagnostics = YakimaTankSetupValidator.Validate(settings);
+
+            Assert.That(YakimaTankSetupValidator.HasErrors(diagnostics), Is.False);
+            SetupDiagnostic warning = diagnostics.Single(d => d.Severity == SetupSeverity.Warning && d.Field == nameof(settings.modelPrefab));
+            StringAssert.Contains("Hull の BoxCollider", warning.Message);
+            StringAssert.DoesNotContain("SphereCollider", warning.Message, "トリガーのコライダーは無効にしない");
+        }
+
+        [TestCase(nameof(YakimaTankSetupSettings.gripThreshold), 0f)]
+        [TestCase(nameof(YakimaTankSetupSettings.gripThreshold), 1.5f)]
+        [TestCase(nameof(YakimaTankSetupSettings.maxTwistAngle), 0f)]
+        [TestCase(nameof(YakimaTankSetupSettings.maxPushDistance), 0f)]
+        [TestCase(nameof(YakimaTankSetupSettings.reverseThreshold), 1f)]
+        [TestCase(nameof(YakimaTankSetupSettings.deadzone), -0.1f)]
+        [TestCase(nameof(YakimaTankSetupSettings.deadzone), 1f)]
+        public void VRの調整値が範囲外ならErrorになる(string field, float value)
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            typeof(YakimaTankSetupSettings).GetField(field).SetValue(settings, value);
+            Assert.That(YakimaTankSetupValidator.Validate(settings).Any(d => d.Severity == SetupSeverity.Error && d.Field == field), Is.True);
         }
 
         [Test]
@@ -194,13 +292,13 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
-        public void 砲塔は記録できるが未実装のWarningになる()
+        public void 砲塔の対応がなければ座席を車体に置くWarningになる()
         {
             YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
-            settings.turret = _model.transform.Find("Hull/Turret");
+            settings.turret = null;
             var diagnostics = YakimaTankSetupValidator.Validate(settings);
             Assert.That(YakimaTankSetupValidator.HasErrors(diagnostics), Is.False);
-            Assert.That(diagnostics.Any(d => d.Severity == SetupSeverity.Warning && d.Field == nameof(settings.turret)), Is.True);
+            Assert.That(diagnostics.Any(d => d.Severity == SetupSeverity.Warning && d.Field == nameof(settings.turret) && d.Message.Contains("車体")), Is.True);
         }
 
         [Test]
@@ -213,6 +311,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 BodyPath = "Hull",
                 LeftWheelPaths = new[] { "Left/Wheel[0]", "Left/Wheel[1]", "Left/Wheel[2]" },
                 RightWheelPaths = new[] { "Right/Wheel[0]", "Right/Wheel[1]", "Right/Wheel[2]" },
+                TurretPath = TestWorkspace.TurretPath,
                 OutputPrefabPath = _workspace.OutputPath
             };
             request.Values["mass"] = 1500.0;
