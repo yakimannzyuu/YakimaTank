@@ -339,7 +339,10 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Vector3 start = _vehicleRoot.transform.position;
             SetInput(1f, 0.3f, 0f);
             yield return Steps(2 * StepsPerSecond);
-            yield return null;
+
+            // パネルはそのフレームの LateUpdate で車体に付いて行く。yield return null の後は次のフレームの Update の後で、
+            // 車体だけが先に動いている（重いモデルほど 1 フレームのずれが大きい）。LateUpdate が済んだフレームの終わりで比べる。
+            yield return new WaitForEndOfFrame();
             Assert.That(Vector3.Distance(_vehicleRoot.transform.position, start), Is.GreaterThan(0.5f), "車両が動いていない（判定にならない）");
 
             var followPosition = (Vector3)followerUdon.GetProgramVariable(nameof(YakimaTankDebugPanel.followPosition));
