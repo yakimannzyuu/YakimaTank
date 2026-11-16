@@ -41,6 +41,13 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>自分が座って、所有権が来るのを待っている。</summary>
         public bool waitingOwnership;
 
+        /// <summary>
+        /// 所有権を待ち始めた回数と、待ちの時間切れを確かめた回数。どちらも同じ長さで予約するので、n 回目の確かめは n 回目の待ちのもの。
+        /// 待ち始めた時刻と比べないのは、予約の時計と realtimeSinceStartup がずれて、ちょうど 3 秒の確かめが通らないことがあるため。
+        /// </summary>
+        public int ownershipWaits;
+        public int ownershipChecks;
+
         private void Start()
         {
             _ApplySeatOffset();
@@ -94,6 +101,7 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             waitingOwnership = true;
+            ownershipWaits++;
             Networking.SetOwner(player, sync.gameObject);
             SendCustomEventDelayedSeconds(nameof(_CheckOwnershipTimeout), OwnershipTimeout);
         }
@@ -134,7 +142,8 @@ namespace Yakimannzyuu.YakimaTank
 
         public void _CheckOwnershipTimeout()
         {
-            if (localSeated && waitingOwnership)
+            ownershipChecks++;
+            if (ownershipChecks == ownershipWaits && localSeated && waitingOwnership)
             {
                 _ForceExit();
             }

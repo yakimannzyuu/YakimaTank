@@ -345,6 +345,82 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Assert.That(Flag(Part(typeof(YakimaTankDesktopInput)), nameof(YakimaTankDesktopInput.isActive)), Is.False);
         }
 
+        [UnityTest]
+        public IEnumerator 自分がオーナーになると保留をすべて捨てその後に所有権が移っても捨てた保留を使わない()
+        {
+            yield return Place(withPlayer: true);
+            VRCPlayerApi current = Session.SpawnRemotePlayer("B");
+            VRCPlayerApi next = Session.SpawnRemotePlayer("C");
+            yield return GiveOwnershipTo(current);
+            Vector3 held = Away(10f);
+            Inject(next.playerId, Epoch + 1, Time.realtimeSinceStartup, held, Quaternion.identity, Vector3.zero, true);
+            int rejected = Read<int>(SyncUdon, nameof(Sync.rejectedCount));
+
+            yield return GiveOwnershipTo(Networking.LocalPlayer);
+            Assert.That(Read<int>(SyncUdon, nameof(Sync.rejectedCount)), Is.EqualTo(rejected + 1), "捨てた保留を数える");
+
+            yield return GiveOwnershipTo(next);
+            yield return null;
+            Assert.That(DistanceTo(held), Is.GreaterThan(1f), "自分がオーナーのときに捨てた保留で置いた");
+        }
+
+        [UnityTest]
+        public IEnumerator 所有権を待つ間に乗り直すと前の乗車の確かめでは降ろさず今の待ちで所有権が来なければ降ろす()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            UdonBehaviour seat = Part(typeof(YakimaTankSeat));
+
+            // ClientSim では所有権がすぐに来て待ちにならないので、乗り直して待ちの確かめが 2 つ残った状態を作る。
+            int checks = Read<int>(seat, nameof(YakimaTankSeat.ownershipChecks));
+            seat.SetProgramVariable(nameof(YakimaTankSeat.waitingOwnership), true);
+            seat.SetProgramVariable(nameof(YakimaTankSeat.ownershipWaits), checks + 2);
+
+            seat.SendCustomEvent(nameof(YakimaTankSeat._CheckOwnershipTimeout));
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.True, "前の乗車の待ちの確かめで降ろした");
+
+            seat.SendCustomEvent(nameof(YakimaTankSeat._CheckOwnershipTimeout));
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.False, "今の待ちで所有権が来ないのに降ろさない");
+            Assert.That(Flag(Part(typeof(YakimaTankDesktopInput)), nameof(YakimaTankDesktopInput.isActive)), Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator 座席の出入りの通知がなくても同期した運転手がいる間は乗車の判定が無効で運転手がいなくなると戻る()
+        {
+            yield return Place(withPlayer: true);
+            VRCPlayerApi driver = Session.SpawnRemotePlayer("B");
+            yield return GiveOwnershipTo(driver);
+            Assert.That(BoardingArea.enabled, Is.True, "運転手がいないのに判定が無効（判定にならない）");
+            Vector3 position = _vehicleRoot.transform.position;
+            Quaternion rotation = _vehicleRoot.transform.rotation;
+            float now = Time.realtimeSinceStartup;
+
+            Inject(driver.playerId, Epoch, now, position, rotation, Vector3.zero, true, driver.playerId);
+            yield return null;
+            Assert.That(BoardingArea.enabled, Is.False, "途中で入った人の画面で、同期した運転手で無効にならない");
+
+            Inject(driver.playerId, Epoch, now + Interval, position, rotation, Vector3.zero, true);
+            yield return null;
+            Assert.That(BoardingArea.enabled, Is.True, "運転手がいなくなっても戻らない");
+        }
+
+        [UnityTest]
+        public IEnumerator 再適用で送る間隔と先読みの上限が同期のUdonに入る()
+        {
+            yield return Place();
+
+            YakimaTankPlayTuning.Reapply(_vehicle, Working(w =>
+            {
+                w.sendInterval = 0.2f;
+                w.maxExtrapolation = 0.4f;
+            }));
+
+            Assert.That(SyncUdon.GetProgramVariable(nameof(Sync.sendInterval)), Is.EqualTo(0.2f));
+            Assert.That(SyncUdon.GetProgramVariable(nameof(Sync.maxExtrapolation)), Is.EqualTo(0.4f));
+        }
+
         private GameObject SpawnRegistry(params GameObject[] vehicles)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RegistryPrefabPath);
