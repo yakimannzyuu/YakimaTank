@@ -1,6 +1,7 @@
 using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
+using VRC.Udon.Common;
 
 namespace Yakimannzyuu.YakimaTank
 {
@@ -152,6 +153,32 @@ namespace Yakimannzyuu.YakimaTank
         private void _ForceExit()
         {
             waitingOwnership = false;
+            _ExitLocal();
+        }
+
+        /// <summary>
+        /// 降りる入力。VRCStation の標準の降り方を止めてあるので（移動の入力で降りないため）、ここで降ろす。
+        /// 今はジャンプ（Desktop は Space、VR はジャンプのボタン）に固定する。割り当てを変えるときは、_RequestExit を呼ぶ所を替える。
+        /// </summary>
+        public override void InputJump(bool value, UdonInputEventArgs args)
+        {
+            if (value)
+            {
+                _RequestExit();
+            }
+        }
+
+        /// <summary>自分が座っていれば降りる。降りる入力から呼ぶ。</summary>
+        public void _RequestExit()
+        {
+            if (localSeated)
+            {
+                _ExitLocal();
+            }
+        }
+
+        private void _ExitLocal()
+        {
             VRCPlayerApi local = Networking.LocalPlayer;
             if (Utilities.IsValid(local) && Utilities.IsValid(station))
             {

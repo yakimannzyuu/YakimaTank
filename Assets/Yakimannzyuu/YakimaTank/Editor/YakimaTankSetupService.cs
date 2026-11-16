@@ -384,7 +384,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             station.PlayerMobility = VRC.SDKBase.VRCStation.Mobility.ImmobilizeForVehicle;
             station.seated = true;
-            station.disableStationExit = false;
+            // 標準の降り方のままだと、運転の W・A・S・D（VR はスティック）でも降りてしまう。降りる入力は座席の Udon が受ける。
+            station.disableStationExit = true;
             station.stationEnterPlayerLocation = seatTransform;
             station.stationExitPlayerLocation = seatTransform;
             YakimaTankSeat seat = existingSeat != null ? existingSeat : FindOrAdd<YakimaTankSeat>(seatTransform.gameObject, out _);

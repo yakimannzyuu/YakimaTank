@@ -306,6 +306,23 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator 座ってジャンプの入力を押すと降り離しただけでは降りない()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            UdonBehaviour seat = Part(typeof(YakimaTankSeat));
+
+            seat.RunInputEvent(UdonManager.UDON_INPUT_JUMP, new VRC.Udon.Common.UdonInputEventArgs(false, VRC.Udon.Common.HandType.RIGHT));
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.True, "ジャンプの入力を離しただけで降りた");
+
+            seat.RunInputEvent(UdonManager.UDON_INPUT_JUMP, new VRC.Udon.Common.UdonInputEventArgs(true, VRC.Udon.Common.HandType.RIGHT));
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.False, "ジャンプの入力を押しても降りない");
+            Assert.That(BoardingArea.enabled, Is.True, "降りたのに乗車の判定が戻らない");
+        }
+
+        [UnityTest]
         public IEnumerator 秒速3メートル以上で前進してから降りると入力が止まり操作値が初期値に戻り5秒以内に止まり乗車の判定が戻る()
         {
             yield return Place(withPlayer: true);

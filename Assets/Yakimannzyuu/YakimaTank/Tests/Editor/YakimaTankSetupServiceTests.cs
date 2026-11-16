@@ -197,7 +197,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
-        public void 座席はVRCStationで乗り物用に移動を止めその場で乗り降りする()
+        public void 座席はVRCStationで乗り物用に移動を止め移動の入力では降りずその場で乗り降りする()
         {
             GameObject prefab = GenerateOrFail();
             var station = prefab.GetComponentsInChildren<VRC.SDK3.Components.VRCStation>(true).Single();
@@ -205,7 +205,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(station.PlayerMobility, Is.EqualTo(VRC.SDKBase.VRCStation.Mobility.ImmobilizeForVehicle));
             Assert.That(station.stationEnterPlayerLocation, Is.SameAs(station.transform));
             Assert.That(station.stationExitPlayerLocation, Is.SameAs(station.transform));
-            Assert.That(station.disableStationExit, Is.False);
+            Assert.That(station.disableStationExit, Is.True, "VRCStation の標準の降り方（移動・ジャンプ）を止め、座席の Udon が降ろす");
         }
 
         [Test]
