@@ -209,7 +209,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
-        public void 乗車の判定はモデル全体の範囲のDefaultのトリガー()
+        public void 乗車の判定は前後と左右が車体のコライダーより5cm外で上下がモデル全体より5cm外のDefaultのトリガー()
         {
             GameObject prefab = GenerateOrFail();
             UdonBehaviour boarding = Udon<YakimaTankBoarding>(prefab);
@@ -218,9 +218,19 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(area.isTrigger, Is.True);
             Assert.That(boarding.gameObject.layer, Is.EqualTo(0), "Default");
             Assert.That(Reference(boarding, nameof(YakimaTankBoarding.area)), Is.SameAs(area));
-            // 転輪の外側 x ±1.3、地面 0 から砲塔の上面 1.74、車体の前後 z ±2。
-            Assert.That(Vector3.Distance(area.center, new Vector3(0f, TestWorkspace.TurretTop * 0.5f, 0f)), Is.LessThan(1e-3f));
-            Assert.That(Vector3.Distance(area.size, new Vector3(2.6f, TestWorkspace.TurretTop, 4f)), Is.LessThan(1e-3f));
+            // 車体のコライダーは x ±1・z ±2（転輪の外側 ±1.3 は含めない）。モデル全体は地面 0 から砲塔の上面 1.74。
+            Assert.That(Vector3.Distance(area.center, new Vector3(0f, TestWorkspace.TurretTop * 0.5f, 0f)), Is.LessThan(1e-3f), "中心 " + area.center.ToString("F3"));
+            Assert.That(Vector3.Distance(area.size, new Vector3(2.1f, TestWorkspace.TurretTop + 0.1f, 4.1f)), Is.LessThan(1e-3f), "大きさ " + area.size.ToString("F3"));
+        }
+
+        [Test]
+        public void 砲身が車体の前に突き出すモデルでも乗車の判定の前端は車体のコライダーの前端より5cm前()
+        {
+            _settings = _workspace.CreateMeshlessParentSettings(_workspace.CreateMeshlessParentModel());
+            GameObject prefab = GenerateOrFail();
+            var area = Udon<YakimaTankBoarding>(prefab).GetComponent<BoxCollider>();
+
+            Assert.That(area.center.z + area.size.z * 0.5f, Is.EqualTo(TestWorkspace.MeshlessHullFront + 0.05f).Within(1e-4f), "砲身の先 5 ではない");
         }
 
         [Test]

@@ -348,7 +348,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             YakimaTankRuntimeValues.WriteToProxy(settings, vr);
             Record(ControlsName, controlsCreated || controlCreated || desktopCreated || vrCreated);
 
-            // 乗車の判定は戦車と同じ大きさ。Interact できるように、プレイヤーの当たりが残る Default のトリガーにする。
+            // 乗車の判定は車体のコライダーを囲み、高さはモデル全体まで。Interact できるように、プレイヤーの当たりが残る Default のトリガーにする。
             if (!YakimaTankBounds.TryGetLocalBounds(modelInstance.transform, root.transform, out Bounds modelBounds))
             {
                 throw new InvalidOperationException("元のモデルにメッシュがないので、乗車の判定の大きさを決められません。");
@@ -364,8 +364,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             area.isTrigger = true;
             area.enabled = true;
-            area.center = modelBounds.center;
-            area.size = modelBounds.size;
+            Bounds areaBounds = YakimaTankSetupMath.BoardingAreaBounds(box, modelBounds);
+            area.center = areaBounds.center;
+            area.size = areaBounds.size;
             YakimaTankBoarding boarding = FindOrAdd<YakimaTankBoarding>(boardingTransform.gameObject, out bool boardingUdonCreated);
             Record(BoardingName, boardingCreated || boardingUdonCreated);
 
