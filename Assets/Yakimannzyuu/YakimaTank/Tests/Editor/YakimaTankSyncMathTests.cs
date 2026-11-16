@@ -31,6 +31,14 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void 送った人がいない状態はオーナーが分からなくても使わない()
+        {
+            int kind = Sync.ClassifyState(Sync.SyncFormat, new Vector3(1f, 2f, 3f), Quaternion.identity, Vector3.zero, Vector3.zero,
+                10f, 9f, Sync.NoPlayer, Sync.NoPlayer);
+            Assert.That(kind, Is.EqualTo(Sync.StateReject));
+        }
+
+        [Test]
         public void 形式が違う状態は使わない()
         {
             Assert.That(Classify(format: 2), Is.EqualTo(Sync.StateReject));

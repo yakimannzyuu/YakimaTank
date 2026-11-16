@@ -676,7 +676,8 @@ namespace Yakimannzyuu.YakimaTank
                          && Mathf.Abs(Mathf.Sqrt(rotation.x * rotation.x + rotation.y * rotation.y + rotation.z * rotation.z + rotation.w * rotation.w) - 1f) <= RotationTolerance
                          && velocity.magnitude <= MaxSpeed
                          && angularVelocity.magnitude <= MaxAngularSpeed
-                         && sendTime > lastUsedTime;
+                         && sendTime > lastUsedTime
+                         && sender != NoPlayer;
             if (!valid)
             {
                 return StateReject;
