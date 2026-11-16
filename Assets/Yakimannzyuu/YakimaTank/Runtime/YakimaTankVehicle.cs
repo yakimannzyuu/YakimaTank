@@ -7,8 +7,10 @@ namespace Yakimannzyuu.YakimaTank
     /// <summary>
     /// 戦車の走行。値はセットアップの生成と、Play 中の再適用（SetProgramVariable）で Editor から書く。
     /// 実行中に設定アセットは読まない（Udon から ScriptableObject は読めない）。
+    /// 物理を計算するのはオーナーの画面だけ（同期の Udon が hasAuthority を切り替える）。
+    /// Manual にするのは、同じ GameObject の同期の Udon と同期の方式をそろえるため。同期変数は持たない。
     /// </summary>
-    [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
+    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class YakimaTankVehicle : UdonSharpBehaviour
     {
         private const float InputDeadZone = 0.01f;
@@ -37,8 +39,14 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>自分が座っている間、物理の更新ごとに読む共通操作値。</summary>
         public YakimaTankControlState control;
 
+        /// <summary>最初の位置に戻したことを伝える同期の Udon。</summary>
+        public YakimaTankVehicleSync sync;
+
         [Header("状態（実行中に変わる）")]
         public bool isReady;
+
+        /// <summary>自分の画面で物理を計算してよい（オーナー）。外すと、入力を受けず、走行の物理の更新もしない。</summary>
+        public bool hasAuthority = true;
         public int generation;
 
         /// <summary>自分（ローカルのプレイヤー）が座席に座っている。座席が書く。</summary>
@@ -66,6 +74,11 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>入力。throttle と steer は -1〜1、brake は 0〜1 に丸める。steer が正なら右へ回る。</summary>
         public void SetDriveInput(float throttle, float steer, float brake)
         {
+            if (!hasAuthority)
+            {
+                return;
+            }
+
             throttleInput = Mathf.Clamp(throttle, -1f, 1f);
             steerInput = Mathf.Clamp(steer, -1f, 1f);
             brakeInput = Mathf.Clamp01(brake);
@@ -84,8 +97,24 @@ namespace Yakimannzyuu.YakimaTank
             }
         }
 
+        /// <summary>同期の Udon から呼ぶ。外したら入力と旋回の速さを 0 にし、転輪の駆動を外す。</summary>
+        public void _SetAuthority(bool value)
+        {
+            hasAuthority = value;
+            if (!value)
+            {
+                throttleInput = 0f;
+                steerInput = 0f;
+                brakeInput = 0f;
+                turnRate = 0f;
+                _ReleaseWheels(leftWheels);
+                _ReleaseWheels(rightWheels);
+            }
+        }
+
         /// <summary>
         /// 設定を入れ直し、最初の位置に戻す。Start に頼らずに呼べる（Play 中の再適用・出し直しから呼ぶ）。
+        /// オーナー以外では値だけを入れ、位置は同期に従う。
         /// </summary>
         public void _ApplySettingsAndReset()
         {
@@ -113,18 +142,27 @@ namespace Yakimannzyuu.YakimaTank
 
             body.mass = mass;
             body.centerOfMass = baseCenterOfMass + centerOfMassOffset;
+            _ReleaseWheels(leftWheels);
+            _ReleaseWheels(rightWheels);
+            isReady = true;
+            if (!hasAuthority)
+            {
+                return;
+            }
+
             _StopBody();
             body.transform.SetPositionAndRotation(spawnPosition, spawnRotation);
             body.position = spawnPosition;
             body.rotation = spawnRotation;
-            _ReleaseWheels(leftWheels);
-            _ReleaseWheels(rightWheels);
-            isReady = true;
+            if (Utilities.IsValid(sync))
+            {
+                sync._OnVehicleReset();
+            }
         }
 
         private void FixedUpdate()
         {
-            if (!isReady)
+            if (!isReady || !hasAuthority)
             {
                 return;
             }

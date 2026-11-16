@@ -30,6 +30,28 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void オーナーでなければ走行の入力を受けず外したときに入力を0にする()
+        {
+            var gameObject = new GameObject("Vehicle");
+            try
+            {
+                var vehicle = gameObject.AddComponent<YakimaTankVehicle>();
+                vehicle.SetDriveInput(1f, 1f, 1f);
+                vehicle._SetAuthority(false);
+                Assert.That(new[] { vehicle.throttleInput, vehicle.steerInput, vehicle.brakeInput }, Is.EqualTo(new[] { 0f, 0f, 0f }), "外したら 0");
+                vehicle.SetDriveInput(0.5f, 0.5f, 0.5f);
+                Assert.That(new[] { vehicle.throttleInput, vehicle.steerInput, vehicle.brakeInput }, Is.EqualTo(new[] { 0f, 0f, 0f }), "オーナーでない間は受けない");
+                vehicle._SetAuthority(true);
+                vehicle.SetDriveInput(0.5f, 0.5f, 0.5f);
+                Assert.That(vehicle.throttleInput, Is.EqualTo(0.5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(gameObject);
+            }
+        }
+
+        [Test]
         public void 前進の入力では入力の割合だけ駆動トルクを掛ける()
         {
             Assert.That(YakimaTankVehicle.CalculateDriveTorque(0.5f, 2f, Drive, MaxForward, MaxReverse), Is.EqualTo(6000f));
