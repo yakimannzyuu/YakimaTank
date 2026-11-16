@@ -305,21 +305,48 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Assert.That(Body.velocity.magnitude, Is.LessThan(0.2f));
         }
 
+        /// <summary>ジャンプの入力を座席の Udon に送る（押す・離す）。</summary>
+        private void Jump(bool pressed)
+        {
+            Part(typeof(YakimaTankSeat)).RunInputEvent(UdonManager.UDON_INPUT_JUMP,
+                new VRC.Udon.Common.UdonInputEventArgs(pressed, VRC.Udon.Common.HandType.RIGHT));
+        }
+
         [UnityTest]
-        public IEnumerator 座ってジャンプの入力を押すと降り離しただけでは降りない()
+        public IEnumerator 座ってジャンプの入力を押すと降りる()
         {
             yield return Place(withPlayer: true);
             yield return Board();
-            UdonBehaviour seat = Part(typeof(YakimaTankSeat));
 
-            seat.RunInputEvent(UdonManager.UDON_INPUT_JUMP, new VRC.Udon.Common.UdonInputEventArgs(false, VRC.Udon.Common.HandType.RIGHT));
+            Jump(true);
             yield return null;
-            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.True, "ジャンプの入力を離しただけで降りた");
 
-            seat.RunInputEvent(UdonManager.UDON_INPUT_JUMP, new VRC.Udon.Common.UdonInputEventArgs(true, VRC.Udon.Common.HandType.RIGHT));
-            yield return null;
-            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.False, "ジャンプの入力を押しても降りない");
+            Assert.That(Flag(Part(typeof(YakimaTankSeat)), nameof(YakimaTankSeat.localSeated)), Is.False);
             Assert.That(BoardingArea.enabled, Is.True, "降りたのに乗車の判定が戻らない");
+        }
+
+        [UnityTest]
+        public IEnumerator 座ってジャンプの入力を離しただけでは降りない()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+
+            Jump(false);
+            yield return null;
+
+            Assert.That(Flag(Part(typeof(YakimaTankSeat)), nameof(YakimaTankSeat.localSeated)), Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator 座っていないときにジャンプの入力を押しても座席と乗車の判定は変わらない()
+        {
+            yield return Place(withPlayer: true);
+
+            Jump(true);
+            yield return null;
+
+            Assert.That(Flag(Part(typeof(YakimaTankSeat)), nameof(YakimaTankSeat.localSeated)), Is.False);
+            Assert.That(BoardingArea.enabled, Is.True);
         }
 
         [UnityTest]

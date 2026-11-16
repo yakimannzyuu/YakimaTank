@@ -156,10 +156,7 @@ namespace Yakimannzyuu.YakimaTank
             _ExitLocal();
         }
 
-        /// <summary>
-        /// 降りる入力。VRCStation の標準の降り方を止めてあるので（移動の入力で降りないため）、ここで降ろす。
-        /// 今はジャンプ（Desktop は Space、VR はジャンプのボタン）に固定する。割り当てを変えるときは、_RequestExit を呼ぶ所を替える。
-        /// </summary>
+        /// <summary>降りる入力。VRCStation の標準の降り方は移動の入力でも降りるので止めてあり、ここで降ろす。</summary>
         public override void InputJump(bool value, UdonInputEventArgs args)
         {
             if (value)

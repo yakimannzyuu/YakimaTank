@@ -387,6 +387,34 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator 所有権を待つ間もジャンプの入力で降りその後の待ちの確かめでは何も起きない()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            UdonBehaviour seat = Part(typeof(YakimaTankSeat));
+
+            // ClientSim では所有権がすぐに来て待ちにならないので、待ちの状態（運転手なし・入力が無効・待ちの確かめが 1 つ残る）を作る。
+            int checks = Read<int>(seat, nameof(YakimaTankSeat.ownershipChecks));
+            seat.SetProgramVariable(nameof(YakimaTankSeat.waitingOwnership), true);
+            seat.SetProgramVariable(nameof(YakimaTankSeat.ownershipWaits), checks + 1);
+            SyncUdon.SetProgramVariable(nameof(Sync.driverId), Sync.NoPlayer);
+            StopAdapters();
+            _vehicle.SetProgramVariable(nameof(YakimaTankVehicle.localDriverSeated), false);
+
+            Jump(true);
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.False, "所有権を待つ間にジャンプで降りられない");
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.waitingOwnership)), Is.False);
+            Assert.That(Read<int>(SyncUdon, nameof(Sync.driverId)), Is.EqualTo(Sync.NoPlayer), "待つ間に降りたのに運転手が入った");
+            Assert.That(BoardingArea.enabled, Is.True, "降りたのに乗車の判定が戻らない");
+
+            seat.SendCustomEvent(nameof(YakimaTankSeat._CheckOwnershipTimeout));
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.False);
+            Assert.That(BoardingArea.enabled, Is.True, "降りた後の待ちの確かめで乗車の判定が変わった");
+        }
+
+        [UnityTest]
         public IEnumerator 座席の出入りの通知がなくても同期した運転手がいる間は乗車の判定が無効で運転手がいなくなると戻る()
         {
             yield return Place(withPlayer: true);
