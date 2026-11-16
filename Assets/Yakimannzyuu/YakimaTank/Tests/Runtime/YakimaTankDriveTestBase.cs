@@ -16,8 +16,9 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
     /// 生成した車両を ClientSim の中で Udon VM として動かし、走行の判定（仕様書 3 節の表）を確かめる。
     /// どの生成物で確かめるかは派生のクラスが決める（製品のテストは立方体のモデル、開発環境は実際のモデル）。
     /// 生成は Play に入る前に済ませておく。Play 中に U# の Prefab を作ると Udon に値が入らないため。
+    /// 同期のテスト（0.3.0）は同じクラスの別のファイルにある。
     /// </summary>
-    public abstract class YakimaTankDriveTestBase : ClientSimTestBase
+    public abstract partial class YakimaTankDriveTestBase : ClientSimTestBase, IPrebuildSetup, IPostBuildCleanup
     {
         private GameObject _prefab;
         private YakimaTankSetupSettings _settings;
@@ -110,12 +111,26 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             _targetFrameRate = Application.targetFrameRate;
         }
 
-        /// <summary>基底の TearDown で ClientSim を終えた後に戻す。</summary>
+        /// <summary>
+        /// 基底の TearDown で ClientSim を終えた後に、刻み幅を戻し、シーンを閉じる前に少し待つ。
+        /// ClientSim は送る要求（RequestSerialization）を、セッションをまたいで残る仕組みで 50 ミリ秒ごとにまとめて処理する。
+        /// その前にシーンを閉じて車両が消えると、次のテストの間に消えた Udon に触れて例外のログを出し、そのテストが失敗する。
+        /// </summary>
         [UnityTearDown]
         public IEnumerator RestoreTimingAfterSession()
         {
             RestoreTiming();
-            yield break;
+            if (_vehicleRoot != null)
+            {
+                // 止めてから待つ。動いたままだと、待っている間にも新しい要求が積まれる。
+                _vehicleRoot.SetActive(false);
+            }
+
+            float start = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - start < 0.2f)
+            {
+                yield return null;
+            }
         }
 
         /// <summary>ClientSim は始めるときに刻み幅と目標のフレームレートを変え、終えても戻さない。後のテストの刻み幅が変わらないように戻す。</summary>

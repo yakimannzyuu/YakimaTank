@@ -6,7 +6,7 @@ using Yakimannzyuu.YakimaTank.Editor.Tests;
 namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
 {
     /// <summary>立方体と円柱のテスト用モデルから生成した車両で、走行の判定を確かめる。</summary>
-    public class YakimaTankDrivePlayModeTests : YakimaTankDriveTestBase, IPrebuildSetup, IPostBuildCleanup
+    public class YakimaTankDrivePlayModeTests : YakimaTankDriveTestBase
     {
         private const string WorkspaceName = "PlayMode";
 
@@ -14,8 +14,9 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         {
         }
 
-        public void Setup()
+        public override void Setup()
         {
+            base.Setup();
             var workspace = new TestWorkspace(WorkspaceName);
             YakimaTankSetupSettings settings = workspace.CreateSettings(workspace.CreateModel());
             SetupResult result = YakimaTankSetupService.Generate(settings);
@@ -25,10 +26,10 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             }
         }
 
-        public void Cleanup()
+        public override void Cleanup()
         {
             new TestWorkspace(WorkspaceName).Dispose();
-            TestWorkspace.DeleteRootIfEmpty();
+            base.Cleanup();
         }
 
         protected override YakimaTankSetupSettings LoadSettings()
