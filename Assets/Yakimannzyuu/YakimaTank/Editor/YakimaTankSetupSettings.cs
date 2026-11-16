@@ -9,7 +9,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
     [CreateAssetMenu(fileName = "YakimaTankSetup", menuName = "YakimaTank/Setup Settings")]
     public sealed class YakimaTankSetupSettings : ScriptableObject, ISerializationCallbackReceiver
     {
-        public const int CurrentSchemaVersion = 2;
+        public const int CurrentSchemaVersion = 3;
 
         public int schemaVersion = CurrentSchemaVersion;
 
@@ -61,6 +61,13 @@ namespace Yakimannzyuu.YakimaTank.Editor
         [Tooltip("ねじり・前後・トリガーを -1〜1・0〜1 にした後に掛ける不感帯")]
         public float deadzone = 0.1f;
 
+        [Header("同期（Play 中に再適用できる）")]
+        [Tooltip("動いている間に送る間隔（秒、0.05〜1）")]
+        public float sendInterval = 0.1f;
+
+        [Tooltip("新しい状態が届かないときに、速度で先へ進めて見せる上限（秒、0〜1）")]
+        public float maxExtrapolation = 0.25f;
+
         [Header("足回り（生成で反映）")]
         [Tooltip("0 なら転輪のメッシュから求める")]
         public float wheelRadius;
@@ -98,12 +105,12 @@ namespace Yakimannzyuu.YakimaTank.Editor
         }
 
         /// <summary>
-        /// 版 1 → 2：足した座席と VR の項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
-        /// 走行・足回りの値と参照は名前を変えていないので、そのまま読める。版だけを上げればよい。
+        /// 版 1 → 2（座席と VR の項目）、版 2 → 3（同期の項目）：足した項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
+        /// 前からある値と参照は名前を変えていないので、そのまま読める。版だけを上げればよい。今より新しい版は変えない（検証で Error）。
         /// </summary>
         public static int Migrate(int version)
         {
-            return version == 1 ? 2 : version;
+            return version >= 1 && version < CurrentSchemaVersion ? CurrentSchemaVersion : version;
         }
     }
 }

@@ -267,6 +267,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Positive(nameof(settings.maxPushDistance), settings.maxPushDistance);
             Range(nameof(settings.reverseThreshold), settings.reverseThreshold, 0f, 1f, true, false);
             Range(nameof(settings.deadzone), settings.deadzone, 0f, 1f, true, false);
+            Range(nameof(settings.sendInterval), settings.sendInterval, 0.05f, 1f, true, true);
+            Range(nameof(settings.maxExtrapolation), settings.maxExtrapolation, 0f, 1f, true, true);
         }
 
         private static bool IsFinite(float value)

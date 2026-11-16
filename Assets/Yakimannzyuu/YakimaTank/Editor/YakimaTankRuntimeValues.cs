@@ -10,7 +10,7 @@ using VRC.Udon;
 namespace Yakimannzyuu.YakimaTank.Editor
 {
     /// <summary>
-    /// Play 中に再適用できる値。設定アセットと、値を受ける Udon（車両・座席・VR の入力）で同じ名前のフィールドにし、
+    /// Play 中に再適用できる値。設定アセットと、値を受ける Udon（車両・座席・VR の入力・同期）で同じ名前のフィールドにし、
     /// 生成でも Play 中の再適用でも、この一覧だけを写す。名前がずれると片方にだけ値が入るので、テストで両方にあることを確かめている。
     /// </summary>
     public static class YakimaTankRuntimeValues
@@ -45,12 +45,20 @@ namespace Yakimannzyuu.YakimaTank.Editor
             nameof(YakimaTankVRInput.deadzone)
         };
 
+        /// <summary>同期。同期の Udon が受ける。</summary>
+        public static readonly IReadOnlyList<string> SyncNames = new[]
+        {
+            nameof(YakimaTankVehicleSync.sendInterval),
+            nameof(YakimaTankVehicleSync.maxExtrapolation)
+        };
+
         /// <summary>値を受ける Udon の型と、その型が受ける名前の組。</summary>
         public static readonly IReadOnlyList<KeyValuePair<Type, IReadOnlyList<string>>> Groups = new[]
         {
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicle), Names),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankSeat), SeatNames),
-            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVRInput), VRInputNames)
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVRInput), VRInputNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), SyncNames)
         };
 
         public static IEnumerable<string> AllNames => Groups.SelectMany(group => group.Value);

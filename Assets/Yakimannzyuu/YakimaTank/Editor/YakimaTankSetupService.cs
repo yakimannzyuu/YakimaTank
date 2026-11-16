@@ -307,6 +307,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 vehicle = UdonSharpUndo.AddComponent<YakimaTankVehicle>(root);
             }
 
+            // 同期はルート（所有権の単位）に置く。車両の Udon も同じ GameObject にあるので、どちらも Manual にそろえてある。
+            YakimaTankVehicleSync sync = FindOrAdd<YakimaTankVehicleSync>(root, out bool syncCreated);
+
             Transform wheels = EnsureChild(root.transform, WheelsName, out _);
             int total = left.Count + right.Count;
             float spring = settings.suspensionSpring > 0f
@@ -406,9 +409,18 @@ namespace Yakimannzyuu.YakimaTank.Editor
             vehicle.rightWheels = rightColliders;
             vehicle.applyOnStart = true;
             vehicle.control = control;
+            vehicle.sync = sync;
             Record(nameof(YakimaTankVehicle), vehicleCreated);
 
-            foreach (UdonSharpBehaviour proxy in new UdonSharpBehaviour[] { vehicle, control, desktop, vr, boarding, seat })
+            YakimaTankRuntimeValues.WriteToProxy(settings, sync);
+            sync.vehicle = vehicle;
+            sync.seat = seat;
+            sync.body = body;
+            sync.physicsColliders = new Collider[] { boxCollider }.Concat(leftColliders).Concat(rightColliders).ToArray();
+            seat.sync = sync;
+            Record(nameof(YakimaTankVehicleSync), syncCreated);
+
+            foreach (UdonSharpBehaviour proxy in new UdonSharpBehaviour[] { vehicle, sync, control, desktop, vr, boarding, seat })
             {
                 UdonSharpEditorUtility.CopyProxyToUdon(proxy);
                 ApplySyncMethod(proxy);
@@ -478,7 +490,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         internal static bool TryGetSyncType(Type type, out Networking.SyncType sync)
         {
-            var attribute = (UdonBehaviourSyncModeAttribute)Attribute.GetCustomAttribute(type, typeof(UdonBehaviourSyncModeAttribute));
+            var attribute = type == null ? null : (UdonBehaviourSyncModeAttribute)Attribute.GetCustomAttribute(type, typeof(UdonBehaviourSyncModeAttribute));
             switch (attribute == null ? BehaviourSyncMode.Any : attribute.behaviourSyncMode)
             {
                 case BehaviourSyncMode.None:
@@ -655,6 +667,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private static readonly Type[] GeneratedBehaviours =
         {
             typeof(YakimaTankVehicle),
+            typeof(YakimaTankVehicleSync),
             typeof(YakimaTankControlState),
             typeof(YakimaTankDesktopInput),
             typeof(YakimaTankVRInput),
@@ -682,6 +695,13 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Require(seat.station != null && seat.boarding != null && seat.vehicle == vehicle && seat.control != null && seat.desktopInput != null && seat.vrInput != null,
                 "座席の参照が欠けています。");
             Require(vehicle.control != null && vehicle.control == seat.control, "車両の共通操作値の参照が欠けています。");
+            YakimaTankVehicleSync sync = FindProxy<YakimaTankVehicleSync>(root, false);
+            Require(sync != null && sync.vehicle == vehicle && sync.seat == seat && sync.body == root.GetComponent<Rigidbody>() && vehicle.sync == sync && seat.sync == sync,
+                "同期の Udon の参照が欠けています。");
+            Collider box = root.transform.Find(CollidersName + "/" + BodyColliderName)?.GetComponent<BoxCollider>();
+            Require(sync.physicsColliders != null && sync.physicsColliders.Length == 1 + vehicle.leftWheels.Length + vehicle.rightWheels.Length &&
+                    sync.physicsColliders.Contains(box) && vehicle.leftWheels.Concat(vehicle.rightWheels).All(w => sync.physicsColliders.Contains(w)),
+                "同期の Udon が、車体のコライダーと WheelCollider をそろえて持っていません。");
             Require(seat.boarding.seat == seat && seat.boarding.area != null && seat.boarding.area.isTrigger && seat.boarding.area.gameObject.layer == DefaultLayer,
                 "乗車の判定が、座席を指す Default のトリガーではありません。");
 
@@ -716,12 +736,25 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 Require(HasReference(seat, name), $"保存した Prefab の座席の Udon に {name} の参照が入っていません。");
             }
 
+            Require(HasReference(seat, nameof(YakimaTankSeat.sync)), "保存した Prefab の座席の Udon に同期の Udon の参照が入っていません。");
+            UdonBehaviour savedSync = SavedUdon(prefab, typeof(YakimaTankVehicleSync));
+            foreach (string name in new[] { nameof(YakimaTankVehicleSync.vehicle), nameof(YakimaTankVehicleSync.seat), nameof(YakimaTankVehicleSync.body) })
+            {
+                Require(HasReference(savedSync, name), $"保存した Prefab の同期の Udon に {name} の参照が入っていません。");
+            }
+
+            Require(savedSync.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicleSync.physicsColliders), out Collider[] shapes) &&
+                    shapes != null && shapes.Length == 1 + settings.leftWheels.Length + settings.rightWheels.Length && shapes.All(c => c != null),
+                "保存した Prefab の同期の Udon に物理の形の参照が入っていません。");
+            Require(savedSync.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicleSync.sendInterval), out float interval) && Mathf.Approximately(interval, settings.sendInterval),
+                "保存した Prefab の同期の Udon に送る間隔が入っていません。");
+
             UdonBehaviour boarding = SavedUdon(prefab, typeof(YakimaTankBoarding));
             Require(HasReference(boarding, nameof(YakimaTankBoarding.seat)) && HasReference(boarding, nameof(YakimaTankBoarding.area)),
                 "保存した Prefab の乗車の判定の Udon に参照が入っていません。");
 
             UdonBehaviour udon = SavedUdon(prefab, typeof(YakimaTankVehicle));
-            Require(HasReference(udon, nameof(YakimaTankVehicle.control)), "保存した Prefab の車両の Udon に共通操作値の参照が入っていません。");
+            Require(HasReference(udon, nameof(YakimaTankVehicle.control)) && HasReference(udon, nameof(YakimaTankVehicle.sync)), "保存した Prefab の車両の Udon に共通操作値か同期の Udon の参照が入っていません。");
             Require(udon.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicle.mass), out float mass) && Mathf.Approximately(mass, settings.mass),
                 "保存した Prefab の Udon に質量が入っていません。");
             Require(udon.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicle.leftWheels), out WheelCollider[] left) &&

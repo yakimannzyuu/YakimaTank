@@ -135,7 +135,9 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             // ずれていると、シーンを開いたときに UdonSharp がインスタンスの側で直し、手の変更と同じ上書きが残る。
             GameObject prefab = GenerateOrFail();
 
-            Assert.That(Vehicle(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.None));
+            // ルートの車両の Udon と同期の Udon は、同じ GameObject なので Manual にそろえる。
+            Assert.That(Vehicle(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.Manual));
+            Assert.That(Udon<YakimaTankVehicleSync>(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.Manual));
             Assert.That(Udon<YakimaTankControlState>(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.None));
             Assert.That(Udon<YakimaTankBoarding>(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.None));
             // 座席は NoVariableSync。U# はそれを Continuous にそろえる（変数は送らない）。
@@ -145,6 +147,25 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         private static UdonBehaviour Udon<T>(GameObject root)
         {
             return root.GetComponentsInChildren<UdonBehaviour>(true).Single(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(T));
+        }
+
+        [Test]
+        public void 同期のUdonはルートに1つで車両と座席と車体と物理の形の参照がそろい車両と座席からも指される()
+        {
+            GameObject prefab = GenerateOrFail();
+            UdonBehaviour sync = Udon<YakimaTankVehicleSync>(prefab);
+
+            Assert.That(sync.gameObject, Is.SameAs(prefab), "ルート（所有権の単位）");
+            Assert.That(Reference(sync, nameof(YakimaTankVehicleSync.vehicle)), Is.SameAs(Vehicle(prefab)));
+            Assert.That(Reference(sync, nameof(YakimaTankVehicleSync.seat)), Is.SameAs(Udon<YakimaTankSeat>(prefab)));
+            Assert.That(Reference(sync, nameof(YakimaTankVehicleSync.body)), Is.SameAs(prefab.GetComponent<Rigidbody>()));
+            Collider[] shapes = Value<Collider[]>(sync, nameof(YakimaTankVehicleSync.physicsColliders));
+            Collider[] expected = new Collider[] { prefab.transform.Find("Colliders/Body").GetComponent<BoxCollider>() }
+                .Concat(prefab.GetComponentsInChildren<WheelCollider>(true)).ToArray();
+            Assert.That(shapes, Is.EquivalentTo(expected), "車体のコライダーと全部の WheelCollider（乗車の判定は入れない）");
+            Assert.That(Reference(Vehicle(prefab), nameof(YakimaTankVehicle.sync)), Is.SameAs(sync));
+            Assert.That(Reference(Udon<YakimaTankSeat>(prefab), nameof(YakimaTankSeat.sync)), Is.SameAs(sync));
+            Assert.That(Value<float>(sync, nameof(YakimaTankVehicleSync.sendInterval)), Is.EqualTo(_settings.sendInterval));
         }
 
         private static Object Reference(UdonBehaviour udon, string name)
@@ -332,7 +353,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(prefab.GetComponentsInChildren<UdonBehaviour>(true).Select(UdonSharpEditorUtility.GetUdonSharpBehaviourType),
                 Is.EquivalentTo(new[]
                 {
-                    typeof(YakimaTankVehicle), typeof(YakimaTankControlState), typeof(YakimaTankDesktopInput),
+                    typeof(YakimaTankVehicle), typeof(YakimaTankVehicleSync), typeof(YakimaTankControlState), typeof(YakimaTankDesktopInput),
                     typeof(YakimaTankVRInput), typeof(YakimaTankBoarding), typeof(YakimaTankSeat)
                 }));
             Assert.That(prefab.GetComponentsInChildren<VRC.SDK3.Components.VRCStation>(true), Has.Length.EqualTo(1));
@@ -350,6 +371,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             long seat = LocalId(Udon<YakimaTankSeat>(first).gameObject);
             long boarding = LocalId(Udon<YakimaTankBoarding>(first));
             long control = LocalId(Udon<YakimaTankControlState>(first));
+            long sync = LocalId(Udon<YakimaTankVehicleSync>(first));
 
             _settings.mass = 1234f;
             _settings.suspensionDistance = 0.3f;
@@ -362,6 +384,8 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(LocalId(Udon<YakimaTankSeat>(second).gameObject), Is.EqualTo(seat), "座席");
             Assert.That(LocalId(Udon<YakimaTankBoarding>(second)), Is.EqualTo(boarding), "乗車の判定");
             Assert.That(LocalId(Udon<YakimaTankControlState>(second)), Is.EqualTo(control), "共通操作値");
+            Assert.That(LocalId(Udon<YakimaTankVehicleSync>(second)), Is.EqualTo(sync), "同期");
+            Assert.That(second.GetComponentsInChildren<UdonBehaviour>(true).Count(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankVehicleSync)), Is.EqualTo(1), "同期の Udon が重なった");
             Assert.That(Value<float>(Vehicle(second), nameof(YakimaTankVehicle.mass)), Is.EqualTo(1234f));
         }
 
@@ -445,6 +469,8 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 working.centerOfMassOffset = new Vector3(0f, -0.3f, 0f);
                 working.seatOffset = new Vector3(0f, 0.2f, 0f);
                 working.maxTwistAngle = 30f;
+                working.sendInterval = 0.2f;
+                working.maxExtrapolation = 0.5f;
                 Assert.That(_settings.maxTurnRate, Is.Not.EqualTo(45f), "保存する前に設定が変わっている");
                 Assert.That(_settings.seatOffset, Is.Not.EqualTo(working.seatOffset), "保存する前に座席のずらしが変わっている");
 
@@ -455,6 +481,8 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 Assert.That(Value<Vector3>(Vehicle(prefab), nameof(YakimaTankVehicle.centerOfMassOffset)), Is.EqualTo(new Vector3(0f, -0.3f, 0f)));
                 Assert.That(Value<Vector3>(Udon<YakimaTankSeat>(prefab), nameof(YakimaTankSeat.seatOffset)), Is.EqualTo(new Vector3(0f, 0.2f, 0f)));
                 Assert.That(Value<float>(Udon<YakimaTankVRInput>(prefab), nameof(YakimaTankVRInput.maxTwistAngle)), Is.EqualTo(30f));
+                Assert.That(Value<float>(Udon<YakimaTankVehicleSync>(prefab), nameof(YakimaTankVehicleSync.sendInterval)), Is.EqualTo(0.2f));
+                Assert.That(Value<float>(Udon<YakimaTankVehicleSync>(prefab), nameof(YakimaTankVehicleSync.maxExtrapolation)), Is.EqualTo(0.5f));
             }
             finally
             {

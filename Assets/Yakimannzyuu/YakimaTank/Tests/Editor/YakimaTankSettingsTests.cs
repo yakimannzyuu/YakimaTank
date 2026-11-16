@@ -52,38 +52,94 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(settings.seatOffset, Is.EqualTo(Vector3.zero));
         }
 
+        /// <summary>保存した設定のアセットから、後の版で足した行を消し、版の番号を書き換えて、読み直す（古い版のアセットを再現する）。</summary>
+        private static YakimaTankSetupSettings ReloadAsVersion(YakimaTankSetupSettings settings, int version, params string[] added)
+        {
+            EditorUtility.SetDirty(settings);
+            AssetDatabase.SaveAssetIfDirty(settings);
+            string path = AssetDatabase.GetAssetPath(settings);
+            string[] lines = System.IO.File.ReadAllLines(path)
+                .Where(line => !added.Any(name => line.TrimStart().StartsWith(name + ":")))
+                .Select(line => line.TrimStart().StartsWith("schemaVersion:") ? "  schemaVersion: " + version : line)
+                .ToArray();
+            Assert.That(lines.Any(line => added.Any(name => line.TrimStart().StartsWith(name + ":"))), Is.False, "後の版の項目が残っている（判定にならない）");
+            System.IO.File.WriteAllLines(path, lines);
+            Resources.UnloadAsset(settings);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            return AssetDatabase.LoadAssetAtPath<YakimaTankSetupSettings>(path);
+        }
+
+        private static readonly string[] AddedInVersion3 = { "sendInterval", "maxExtrapolation" };
+
         [Test]
-        public void 版1の設定を読み込むと版2に移り走行と足回りの値と参照を保って足した項目は既定値になる()
+        public void 版2の設定を読み込むと版3に移り値と参照を保って足した同期の項目は既定値になる()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model, "Version2");
+            settings.mass = 1234f;
+            settings.gripThreshold = 0.9f;
+            settings.seatOffset = Vector3.one;
+            settings.sendInterval = 0.5f;
+            settings.maxExtrapolation = 0.9f;
+
+            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 2, AddedInVersion3);
+
+            Assert.That(migrated.schemaVersion, Is.EqualTo(3));
+            Assert.That(migrated.mass, Is.EqualTo(1234f));
+            Assert.That(migrated.gripThreshold, Is.EqualTo(0.9f));
+            Assert.That(migrated.seatOffset, Is.EqualTo(Vector3.one));
+            Assert.That(migrated.body, Is.SameAs(_model.transform.Find("Hull")));
+            Assert.That(migrated.turret, Is.SameAs(_model.transform.Find(TestWorkspace.TurretPath)));
+            Assert.That(migrated.sendInterval, Is.EqualTo(0.1f), "足した項目が既定値になっていない");
+            Assert.That(migrated.maxExtrapolation, Is.EqualTo(0.25f));
+            Assert.That(YakimaTankSetupValidator.Validate(migrated).Where(d => d.Severity == SetupSeverity.Error), Is.Empty);
+        }
+
+        [Test]
+        public void 同期の調整値の初期値は仕様の仮の値()
+        {
+            var settings = ScriptableObject.CreateInstance<YakimaTankSetupSettings>();
+            try
+            {
+                Assert.That(settings.sendInterval, Is.EqualTo(0.1f));
+                Assert.That(settings.maxExtrapolation, Is.EqualTo(0.25f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(settings);
+            }
+        }
+
+        [TestCase(nameof(YakimaTankSetupSettings.sendInterval), 0.04f)]
+        [TestCase(nameof(YakimaTankSetupSettings.sendInterval), 1.01f)]
+        [TestCase(nameof(YakimaTankSetupSettings.maxExtrapolation), -0.01f)]
+        [TestCase(nameof(YakimaTankSetupSettings.maxExtrapolation), 1.01f)]
+        public void 同期の調整値が範囲外ならErrorになる(string field, float value)
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            typeof(YakimaTankSetupSettings).GetField(field).SetValue(settings, value);
+            Assert.That(YakimaTankSetupValidator.Validate(settings).Any(d => d.Severity == SetupSeverity.Error && d.Field == field), Is.True);
+        }
+
+        [Test]
+        public void 版1の設定を読み込むと今の版に移り走行と足回りの値と参照を保って足した項目は既定値になる()
         {
             YakimaTankSetupSettings settings = _workspace.CreateSettings(_model, "Old");
             settings.mass = 1234f;
             settings.suspensionDistance = 0.3f;
             settings.gripThreshold = 0.9f;
             settings.seatOffset = Vector3.one;
-            EditorUtility.SetDirty(settings);
-            AssetDatabase.SaveAssetIfDirty(settings);
-            string path = AssetDatabase.GetAssetPath(settings);
+            string[] addedInVersion2 = { "seatOffset", "gripThreshold", "maxTwistAngle", "maxPushDistance", "reverseThreshold", "deadzone" };
 
-            // 版 1 のアセットを再現する。版 2 で足した行を消し、版の番号を 1 にする。
-            string[] added = { "seatOffset", "gripThreshold", "maxTwistAngle", "maxPushDistance", "reverseThreshold", "deadzone" };
-            string[] lines = System.IO.File.ReadAllLines(path)
-                .Where(line => !added.Any(name => line.TrimStart().StartsWith(name + ":")))
-                .Select(line => line.TrimStart().StartsWith("schemaVersion:") ? "  schemaVersion: 1" : line)
-                .ToArray();
-            Assert.That(lines.Any(line => line.Contains("gripThreshold")), Is.False, "版 2 の項目が残っている（判定にならない）");
-            System.IO.File.WriteAllLines(path, lines);
-            Resources.UnloadAsset(settings);
-            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 1, addedInVersion2.Concat(AddedInVersion3).ToArray());
 
-            var migrated = AssetDatabase.LoadAssetAtPath<YakimaTankSetupSettings>(path);
-
-            Assert.That(migrated.schemaVersion, Is.EqualTo(2));
+            Assert.That(migrated.schemaVersion, Is.EqualTo(YakimaTankSetupSettings.CurrentSchemaVersion));
             Assert.That(migrated.mass, Is.EqualTo(1234f));
             Assert.That(migrated.suspensionDistance, Is.EqualTo(0.3f));
             Assert.That(migrated.body, Is.SameAs(_model.transform.Find("Hull")));
             Assert.That(migrated.leftWheels, Has.Length.EqualTo(3));
             Assert.That(migrated.gripThreshold, Is.EqualTo(0.5f), "足した項目が既定値になっていない");
             Assert.That(migrated.seatOffset, Is.EqualTo(Vector3.zero));
+            Assert.That(migrated.sendInterval, Is.EqualTo(0.1f));
             Assert.That(YakimaTankSetupValidator.Validate(migrated).Where(d => d.Severity == SetupSeverity.Error), Is.Empty);
         }
 
