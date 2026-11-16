@@ -17,6 +17,7 @@ flowchart LR
   service --> prefab[(生成 Prefab)]
   prefab --> placement[配置]
   placement --> scene[(シーン)]
+  placement --> registry[(シーンの車両の一覧)]
   window --> tuning[Play 中の調整]
   bridge --> tuning
   tuning --> vehicle[車両の Udon]
@@ -29,7 +30,7 @@ flowchart LR
 
 ### 実行中の部品
 
-乗車と入力は、生成 Prefab の中の Udon で閉じる。入力の方法と車両の動きは、共通操作値で分ける。この版は同期しない（各自の画面だけ）。
+乗車と入力は、生成 Prefab の中の Udon で閉じる。入力の方法と車両の動きは、共通操作値で分ける。運転手が車両のオーナーになり、オーナーだけが物理を計算して、車体の状態を同期の Udon で送る（ADR 0009）。
 
 ```mermaid
 flowchart LR
@@ -40,12 +41,19 @@ flowchart LR
   desktop --> control[(共通操作値)]
   vr --> control
   control --> vehicle[車両の Udon<br/>走行への変換]
-  seat --> vehicle
+  seat --> sync[同期の Udon<br/>所有権・送る・受ける]
+  sync --> vehicle
   vehicle --> physics[Rigidbody・WheelCollider<br/>Walkthrough]
+  sync --> net[VRChat の同期<br/>Manual]
+  net --> remote[ほかの人の画面<br/>補間して置く]
+  registry[(シーンの車両の一覧)] --> sync
   control --> panel[デバッグ UI<br/>別 Prefab]
+  sync --> panel
 ```
 
-- 車両は、自分が座っている間だけ物理の更新ごとに共通操作値を読む。座っていない間は `SetDriveInput` を直接使える。
+- 車両は、オーナーの画面で、自分が座っている間だけ物理の更新ごとに共通操作値を読む。座っていない間は `SetDriveInput` を直接使える。オーナー以外の画面では、走行の入力も物理の更新もしない。
+- オーナー以外の画面では、車体を kinematic にして物理の形（車体のコライダーと WheelCollider）を無効にし、受けた状態を表示する時刻の前後から補間して置く。
+- 同じ人が持つ車両同士は、シーンの車両の一覧から `Physics.IgnoreCollision` で当たりを外す。この版では車両同士はすり抜ける。
 - 車体のコライダーと WheelCollider は `Walkthrough` レイヤーで、プレイヤーと当たらない。元のモデルのトリガーでないコライダーは、生成 Prefab の中で無効にする。
 
 ## 主要な流れ
@@ -97,6 +105,34 @@ sequenceDiagram
   S->>B: 判定を戻す
 ```
 
+### 乗車から所有権・同期まで
+
+```mermaid
+sequenceDiagram
+  actor A as 乗る人 A
+  participant S as 座席
+  participant Y as 同期の Udon（A の画面）
+  participant N as VRChat
+  participant B as 同期の Udon（B の画面）
+  A->>S: 乗車の判定を Interact して座る
+  S->>Y: オーナーでなければ所有権を取る（SetOwner）
+  N-->>Y: OnOwnershipTransferred（A）
+  Y->>Y: 最新の状態から物理を始める・世代を進める
+  Y->>S: 入力を有効にする・運転手を A にして送る
+  loop 動いている間（送る間隔ごと）
+    Y->>N: 状態（位置・姿勢・速度・世代・運転手）
+    N-->>B: OnDeserialization（sendTime）
+    B->>B: 確かめて履歴に入れ、表示する時刻で補間
+  end
+  A->>S: 降りる
+  S->>Y: 入力を止める・運転手なし
+  Y->>N: 止まったら停止の印をつけて最後の状態
+  Note over Y,B: 所有権は A のまま。次に乗った人が取る
+```
+
+- 3 秒たっても所有権が来ないとき、座ったまま所有権がほかの人へ移ったときは、座席から降ろす。
+- 新しいオーナーの状態が所有権の移動の通知より先に届いたら、送った人ごとに保留し、その人へ所有権が移ったときに使う（状態遷移は [diagrams/vehicle-ownership-states.md](diagrams/vehicle-ownership-states.md)）。
+
 ### 連携でのコンパイルからテストまで
 
 ```mermaid
@@ -123,29 +159,32 @@ sequenceDiagram
 
 | 部品 | 場所 | 用途 |
 |---|---|---|
-| `YakimaTankVehicle` | Runtime | 走行・制動・旋回・再適用。自分が座っている間は共通操作値から走る（UdonSharp） |
+| `YakimaTankVehicle` | Runtime | 走行・制動・旋回・再適用。自分が座っている間は共通操作値から走る（UdonSharp）。オーナーの画面でだけ物理を計算する |
+| `YakimaTankVehicleSync` | Runtime | 車体の同期（ルート、Manual）。所有権の切り替え、送る状態の採取と送る間隔、受けた状態の確かめ・保留・履歴・補間・先読み、物理の形の有効・無効、すり抜け。計算は静的な関数 |
+| `YakimaTankVehicleRegistry` | Runtime | シーンの車両の一覧（同期しない）。始まるときに各車両へ自分を知らせる |
 | `YakimaTankControlState` | Runtime | 共通操作値（ハンドル・アクセル・ギアなど）。入力が書き、車両とデバッグ UI が読む |
-| `YakimaTankSeat` | Runtime | 座席（VRCStation と同じ GameObject）。出入りで乗車の判定と入力を切り替え、降りたら初期値に戻す |
+| `YakimaTankSeat` | Runtime | 座席（VRCStation と同じ GameObject）。出入りで乗車の判定と入力を切り替え、降りたら初期値に戻す。座ったら所有権を取り、来たら入力を有効にする |
 | `YakimaTankBoarding` | Runtime | 乗車の判定の Interact |
 | `YakimaTankDesktopInput` | Runtime | Desktop の入力（W・S・A・D、視点、左クリック）。変換は静的な関数 |
 | `YakimaTankVRInput` | Runtime | VR の入力（左手で走行、右手で砲と射撃）。変換は静的な関数 |
-| `YakimaTankDebugPanel` | Runtime | デバッグ UI。共通操作値を箱の大きさで見せる。別 Prefab |
+| `YakimaTankDebugPanel` | Runtime | デバッグ UI。共通操作値を箱の大きさで、同期の状態を UI の文字で見せる。別 Prefab |
 | `YakimaTankSetupSettings` | Editor | 設定アセット（正本）。読み込むときに今の版へ移す |
 | `YakimaTankSetupValidator` | Editor | 設定の検証（Error・Warning）。`Walkthrough` レイヤー・砲塔・元のモデルのコライダー・砲塔と砲身を除いた車体のメッシュも見る |
 | `YakimaTankSettingsWriter` | Editor | 階層パスで設定を書く。解決できなければ何も書かない |
 | `YakimaTankSetupService` | Editor | 生成（座席・乗車の判定・入力・レイヤーを含む）。ウィンドウと連携が共用する |
-| `YakimaTankScenePlacement` | Editor | シーンへの配置。車両は生成 Prefab のインスタンスで見分け、その車両を指すデバッグ UI を 1 枚まで許す。ほかの手の変更があれば変えずに止める |
+| `YakimaTankScenePlacement` | Editor | シーンへの配置。車両は生成 Prefab のインスタンスで見分け、その車両を指すデバッグ UI を 1 枚まで許す。ほかの手の変更があれば変えずに止める（UdonSharp が書く上書きは除く）。配置のたびにシーンの車両の一覧を作り直す |
+| `YakimaTankSceneRegistry` | Editor | シーンの車両の一覧を作り直す・実際の車両と合っているかを確かめる。車両の中を指す型の古い Network ID（0.2.0 でビルドしたシーン）を外す。VRChat SDK のビルドの前に、古い ID を外してから確かめ、一覧が合わなければ止める（`YakimaTankRegistryBuildCheck`） |
 | `YakimaTankDebugPanelPlacement` | Editor | 入れ物にデバッグ UI を 1 枚置く（開発ワールドの更新が配置の後に呼ぶ） |
 | `YakimaTankDebugPanelBuilder` | Editor | パッケージのデバッグ UI の Prefab を作る（作り直すときも使う） |
 | `YakimaTankPlayTuning` | Editor | Play 中の再適用・出し直し・作業値の保存。車両・座席・VR の入力に書く。出し直したら、前の車両を表示していたデバッグ UI を新しい車両につなぎ直す |
 | `YakimaTankWorkingValues` | Editor | Play 中の作業値。作った元の設定と組にし、設定が替われば作り直す |
-| `YakimaTankRuntimeValues` | Editor | 設定と、値を受ける Udon（車両・座席・VR の入力）で同じ名前の値 |
+| `YakimaTankRuntimeValues` | Editor | 設定と、値を受ける Udon（車両・座席・VR の入力・同期）で同じ名前の値 |
 | `YakimaTankModelPaths` | Editor | モデルの中の階層パス（同じ名前の兄弟は番号つき。名前の中の `\` `/` `[` `]` はエスケープ） |
 | `YakimaTankBounds` | Editor | メッシュの範囲（SkinnedMeshRenderer はルートのボーンの座標）。車体・砲塔自身にメッシュがなければ、子から砲塔・砲身の階層を除いて求める |
 | `YakimaTankSetupMath` | Editor | 転輪の半径・位置、サスペンションの自動の値 |
 | `YakimaTankModelInspector` | Editor | モデルを読むだけで、階層・範囲・軸・名前からの候補を返す（連携の `inspect-model`） |
 | `TestWorkspace` | Tests/Editor | テストの一時フォルダと、立方体と円柱のモデル |
-| `YakimaTankDriveTestBase` | Tests/Runtime | 走行と乗降の判定（PlayMode・ClientSim）。生成物ごとに派生させる。乗降のテストだけ ClientSim を始める |
+| `YakimaTankDriveTestBase` | Tests/Runtime | 走行・乗降・同期の判定（PlayMode・ClientSim）。生成物ごとに派生させる。乗降と同期のテストだけ ClientSim を始める。受ける状態は `_AcceptState` に直接入れ、送る要求にはテストが OnPreSerialization・OnPostSerialization で応える |
 
 ## これからの設計
 
@@ -157,3 +196,4 @@ sequenceDiagram
 |---|---|
 | 生成 Prefab のデータ構造 | [diagrams/generated-prefab.md](diagrams/generated-prefab.md) |
 | 連携の要求の状態遷移 | [diagrams/request-states.md](diagrams/request-states.md) |
+| 車両の所有権の状態遷移 | [diagrams/vehicle-ownership-states.md](diagrams/vehicle-ownership-states.md) |
