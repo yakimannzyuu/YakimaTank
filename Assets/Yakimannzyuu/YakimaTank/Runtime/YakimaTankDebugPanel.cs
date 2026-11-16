@@ -24,7 +24,7 @@ namespace Yakimannzyuu.YakimaTank
         public bool followVehicle = true;
 
         [Tooltip("付いて行くときの、車体から見た位置（m）")]
-        public Vector3 followPosition = new Vector3(-2f, 2.5f, 3f);
+        public Vector3 followPosition = new Vector3(-4f, 2.5f, 6f);
 
         [Tooltip("付いて行くときの、車体から見た向き（度）")]
         public Vector3 followRotation = new Vector3(0f, -30f, 0f);

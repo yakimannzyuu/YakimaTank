@@ -365,7 +365,7 @@ MonoBehaviour:
   _udonSharpBackingUdonBehaviour: {fileID: 1433582911186276628}
   vehicle: {fileID: 0}
   followVehicle: 1
-  followPosition: {x: -2, y: 2.5, z: 3}
+  followPosition: {x: -4, y: 2.5, z: 6}
   followRotation: {x: 0, y: -30, z: 0}
   steeringBar: {fileID: 4385527896753691873}
   leftLeverBar: {fileID: 4820112449726061991}
