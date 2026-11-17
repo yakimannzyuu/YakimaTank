@@ -8,6 +8,7 @@ namespace Yakimannzyuu.YakimaTank
     /// <summary>
     /// 車体の同期（ADR 0009）。オーナーだけが物理を計算し、送る直前に Rigidbody の状態を同期変数に入れる。
     /// オーナー以外は、受けた状態を送った時刻つきの履歴にため、表示する時刻の前後から補間して車体を置く（物理の形は無効）。
+    /// 車両同士の簡易衝突（仕様書 0.4.0）も受け持つ。相手の履歴を持つのがここなので、接触用の姿勢と速度の変化をここで求め、車両が速度に足す。
     /// 計算は静的な関数に分けて EditMode で確かめる。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]

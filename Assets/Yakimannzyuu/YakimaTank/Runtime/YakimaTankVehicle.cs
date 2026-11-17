@@ -7,7 +7,7 @@ namespace Yakimannzyuu.YakimaTank
     /// <summary>
     /// 戦車の走行。値はセットアップの生成と、Play 中の再適用（SetProgramVariable）で Editor から書く。
     /// 実行中に設定アセットは読まない（Udon から ScriptableObject は読めない）。
-    /// 物理を計算するのはオーナーの画面だけ（同期の Udon が hasAuthority を切り替える）。
+    /// 物理を計算するのはオーナーの画面だけ（同期の Udon が hasAuthority を切り替える）。車両同士の接触の速度の変化は、同期の Udon が求める。
     /// Manual にするのは、同じ GameObject の同期の Udon と同期の方式をそろえるため。同期変数は持たない。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
