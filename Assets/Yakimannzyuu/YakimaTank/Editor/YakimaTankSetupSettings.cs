@@ -9,7 +9,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
     [CreateAssetMenu(fileName = "YakimaTankSetup", menuName = "YakimaTank/Setup Settings")]
     public sealed class YakimaTankSetupSettings : ScriptableObject, ISerializationCallbackReceiver
     {
-        public const int CurrentSchemaVersion = 3;
+        public const int CurrentSchemaVersion = 4;
 
         public int schemaVersion = CurrentSchemaVersion;
 
@@ -68,6 +68,16 @@ namespace Yakimannzyuu.YakimaTank.Editor
         [Tooltip("新しい状態が届かないときに、速度で先へ進めて見せる上限（秒、0〜1）")]
         public float maxExtrapolation = 0.25f;
 
+        [Header("接触（Play 中に再適用できる）")]
+        [Tooltip("相手へ寄る速さを消す速さ（1/秒、0 以上）。10 なら 0.1 秒ほどで消す")]
+        public float contactStopRate = 10f;
+
+        [Tooltip("重なりの深さあたりの押し返す加速（1/秒²、0 以上）")]
+        public float contactPushStrength = 20f;
+
+        [Tooltip("押し返す加速の上限（m/s²、0 以上）。停止中のブレーキの減速より大きいと、無人の車両を押せる")]
+        public float contactMaxPushAcceleration = 5f;
+
         [Header("足回り（生成で反映）")]
         [Tooltip("0 なら転輪のメッシュから求める")]
         public float wheelRadius;
@@ -105,7 +115,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         }
 
         /// <summary>
-        /// 版 1 → 2（座席と VR の項目）、版 2 → 3（同期の項目）：足した項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
+        /// 版 1 → 2（座席と VR の項目）、版 2 → 3（同期の項目）、版 3 → 4（接触の項目）：足した項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
         /// 前からある値と参照は名前を変えていないので、そのまま読める。版だけを上げればよい。今より新しい版は変えない（検証で Error）。
         /// </summary>
         public static int Migrate(int version)

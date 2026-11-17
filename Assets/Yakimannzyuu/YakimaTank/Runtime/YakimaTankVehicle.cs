@@ -167,6 +167,13 @@ namespace Yakimannzyuu.YakimaTank
                 return;
             }
 
+            // 車両同士の接触は速度だけを直す。走行は角速度と転輪のトルクを書くので上書きし合わない。
+            // 接地していないと下で抜けるので、その前に足す。
+            if (Utilities.IsValid(sync))
+            {
+                body.velocity = body.velocity + sync._ContactVelocityChange();
+            }
+
             if (localDriverSeated && Utilities.IsValid(control))
             {
                 SetDriveInput(ControlThrottle(control.throttle, control.gear), control.steering, control.brake);

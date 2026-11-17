@@ -168,6 +168,21 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(Value<float>(sync, nameof(YakimaTankVehicleSync.sendInterval)), Is.EqualTo(_settings.sendInterval));
         }
 
+        [Test]
+        public void 同期のUdonは接触に使う車体のBoxColliderを参照し接触の値が入る()
+        {
+            _settings.contactStopRate = 12f;
+            _settings.contactPushStrength = 25f;
+            _settings.contactMaxPushAcceleration = 4f;
+            GameObject prefab = GenerateOrFail();
+            UdonBehaviour sync = Udon<YakimaTankVehicleSync>(prefab);
+
+            Assert.That(Reference(sync, nameof(YakimaTankVehicleSync.bodyCollider)), Is.SameAs(prefab.transform.Find("Colliders/Body").GetComponent<BoxCollider>()));
+            Assert.That(Value<float>(sync, nameof(YakimaTankVehicleSync.contactStopRate)), Is.EqualTo(12f));
+            Assert.That(Value<float>(sync, nameof(YakimaTankVehicleSync.contactPushStrength)), Is.EqualTo(25f));
+            Assert.That(Value<float>(sync, nameof(YakimaTankVehicleSync.contactMaxPushAcceleration)), Is.EqualTo(4f));
+        }
+
         private static Object Reference(UdonBehaviour udon, string name)
         {
             Assert.That(udon.publicVariables.TryGetVariableValue(name, out object value), Is.True, name + " が Udon に入っていない");
@@ -481,6 +496,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 working.maxTwistAngle = 30f;
                 working.sendInterval = 0.2f;
                 working.maxExtrapolation = 0.5f;
+                working.contactMaxPushAcceleration = 3f;
                 Assert.That(_settings.maxTurnRate, Is.Not.EqualTo(45f), "保存する前に設定が変わっている");
                 Assert.That(_settings.seatOffset, Is.Not.EqualTo(working.seatOffset), "保存する前に座席のずらしが変わっている");
 
@@ -493,6 +509,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 Assert.That(Value<float>(Udon<YakimaTankVRInput>(prefab), nameof(YakimaTankVRInput.maxTwistAngle)), Is.EqualTo(30f));
                 Assert.That(Value<float>(Udon<YakimaTankVehicleSync>(prefab), nameof(YakimaTankVehicleSync.sendInterval)), Is.EqualTo(0.2f));
                 Assert.That(Value<float>(Udon<YakimaTankVehicleSync>(prefab), nameof(YakimaTankVehicleSync.maxExtrapolation)), Is.EqualTo(0.5f));
+                Assert.That(Value<float>(Udon<YakimaTankVehicleSync>(prefab), nameof(YakimaTankVehicleSync.contactMaxPushAcceleration)), Is.EqualTo(3f));
             }
             finally
             {

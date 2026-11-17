@@ -113,18 +113,23 @@ namespace Yakimannzyuu.YakimaTank
             VRCPlayerApi local = Networking.LocalPlayer;
             bool ownerIsYou = Utilities.IsValid(local) && local.playerId == sync.ownerId;
             int driver = sync._HasDriver() ? sync.driverId : YakimaTankVehicleSync.NoPlayer;
-            syncText.text = SyncSummary(sync.isOwnerMode, sync.ownerId, ownerIsYou, driver, sync.epoch, sync._GetAge(), _sentRate, _requestedRate, sync.rejectedCount);
+            syncText.text = SyncSummary(sync.isOwnerMode, sync.ownerId, ownerIsYou, driver, sync.epoch, sync._GetAge(), _sentRate, _requestedRate, sync.rejectedCount,
+                sync.contactCount, sync.contactCutoffCount);
         }
 
-        /// <summary>同期の状態の文字（仕様書 0.3.0 の 1.7）。オーナーは送った回数と要求した回数、オーナー以外は最新の状態の古さを出す。</summary>
-        public static string SyncSummary(bool owner, int ownerId, bool ownerIsYou, int driverId, int epoch, float age, float sentRate, float requestedRate, int rejected)
+        /// <summary>
+        /// 同期の状態の文字（仕様書 0.3.0 の 1.7・0.4.0 の 1.7）。オーナーは送った回数と要求した回数と接触、オーナー以外は最新の状態の古さを出す。
+        /// 接触はオーナーだけが計算するので、オーナー以外では出さない。
+        /// </summary>
+        public static string SyncSummary(bool owner, int ownerId, bool ownerIsYou, int driverId, int epoch, float age, float sentRate, float requestedRate, int rejected,
+            int contacts, int stale)
         {
             string text = (owner ? "OWNER" : "REMOTE")
                           + "\nOwner " + ownerId + (ownerIsYou ? " (you)" : "")
                           + "\nDriver " + (driverId < 0 ? "-" : driverId.ToString())
                           + "\nEpoch " + epoch;
             text += owner
-                ? "\nSent/s " + sentRate.ToString("F1") + "  Req/s " + requestedRate.ToString("F1")
+                ? "\nSent/s " + sentRate.ToString("F1") + "  Req/s " + requestedRate.ToString("F1") + "\nContact " + contacts + "  Stale " + stale
                 : "\nAge " + (age < 0f ? "-" : age.ToString("F2"));
             return text + "\nRejected " + rejected;
         }

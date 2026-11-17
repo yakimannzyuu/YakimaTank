@@ -267,7 +267,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             text.alignment = TextAnchor.UpperLeft;
             text.color = Color.white;
             text.raycastTarget = false;
-            text.text = YakimaTankDebugPanel.SyncSummary(true, YakimaTankVehicleSync.NoPlayer, false, YakimaTankVehicleSync.NoPlayer, 0, -1f, 0f, 0f, 0);
+            text.text = YakimaTankDebugPanel.SyncSummary(true, YakimaTankVehicleSync.NoPlayer, false, YakimaTankVehicleSync.NoPlayer, 0, -1f, 0f, 0f, 0, 0, 0);
             return text;
         }
 

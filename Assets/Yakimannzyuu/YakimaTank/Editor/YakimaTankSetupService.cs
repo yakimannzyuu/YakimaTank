@@ -419,6 +419,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             sync.seat = seat;
             sync.body = body;
             sync.physicsColliders = new Collider[] { boxCollider }.Concat(leftColliders).Concat(rightColliders).ToArray();
+            sync.bodyCollider = boxCollider;
             seat.sync = sync;
             Record(nameof(YakimaTankVehicleSync), syncCreated);
 
@@ -704,6 +705,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Require(sync.physicsColliders != null && sync.physicsColliders.Length == 1 + vehicle.leftWheels.Length + vehicle.rightWheels.Length &&
                     sync.physicsColliders.Contains(box) && vehicle.leftWheels.Concat(vehicle.rightWheels).All(w => sync.physicsColliders.Contains(w)),
                 "同期の Udon が、車体のコライダーと WheelCollider をそろえて持っていません。");
+            Require(box != null && sync.bodyCollider == box, "同期の Udon の、接触に使う車体のコライダーの参照が欠けています。");
             Require(seat.boarding.seat == seat && seat.boarding.area != null && seat.boarding.area.isTrigger && seat.boarding.area.gameObject.layer == DefaultLayer,
                 "乗車の判定が、座席を指す Default のトリガーではありません。");
 
@@ -740,7 +742,11 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             Require(HasReference(seat, nameof(YakimaTankSeat.sync)), "保存した Prefab の座席の Udon に同期の Udon の参照が入っていません。");
             UdonBehaviour savedSync = SavedUdon(prefab, typeof(YakimaTankVehicleSync));
-            foreach (string name in new[] { nameof(YakimaTankVehicleSync.vehicle), nameof(YakimaTankVehicleSync.seat), nameof(YakimaTankVehicleSync.body) })
+            foreach (string name in new[]
+                     {
+                         nameof(YakimaTankVehicleSync.vehicle), nameof(YakimaTankVehicleSync.seat), nameof(YakimaTankVehicleSync.body),
+                         nameof(YakimaTankVehicleSync.bodyCollider)
+                     })
             {
                 Require(HasReference(savedSync, name), $"保存した Prefab の同期の Udon に {name} の参照が入っていません。");
             }
@@ -750,6 +756,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 "保存した Prefab の同期の Udon に物理の形の参照が入っていません。");
             Require(savedSync.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicleSync.sendInterval), out float interval) && Mathf.Approximately(interval, settings.sendInterval),
                 "保存した Prefab の同期の Udon に送る間隔が入っていません。");
+            Require(savedSync.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicleSync.contactMaxPushAcceleration), out float maxPush) &&
+                    Mathf.Approximately(maxPush, settings.contactMaxPushAcceleration),
+                "保存した Prefab の同期の Udon に接触の値が入っていません。");
 
             UdonBehaviour boarding = SavedUdon(prefab, typeof(YakimaTankBoarding));
             Require(HasReference(boarding, nameof(YakimaTankBoarding.seat)) && HasReference(boarding, nameof(YakimaTankBoarding.area)),

@@ -65,10 +65,23 @@ namespace Yakimannzyuu.YakimaTank
         [Tooltip("新しい状態が届かないときに、速度で先へ進めて見せる上限（秒）")]
         public float maxExtrapolation = 0.25f;
 
+        [Header("接触（Play 中に再適用できる）")]
+        [Tooltip("相手へ寄る速さを消す速さ（1/秒）")]
+        public float contactStopRate = 10f;
+
+        [Tooltip("重なりの深さあたりの押し返す加速（1/秒²）")]
+        public float contactPushStrength = 20f;
+
+        [Tooltip("押し返す加速の上限（m/s²）")]
+        public float contactMaxPushAcceleration = 5f;
+
         [Header("生成で決まる値")]
         public YakimaTankVehicle vehicle;
         public YakimaTankSeat seat;
         public Rigidbody body;
+
+        /// <summary>接触に使う車体の箱。</summary>
+        public BoxCollider bodyCollider;
 
         /// <summary>オーナー以外の画面で無効にする物理の形（車体のコライダーと WheelCollider）。乗車の判定は含めない。</summary>
         public Collider[] physicsColliders = new Collider[0];
@@ -97,8 +110,24 @@ namespace Yakimannzyuu.YakimaTank
         public int rejectedCount;
         public YakimaTankVehicleRegistry registry;
 
+        /// <summary>デバッグ UI：直前の物理の更新で重なっていた相手の数と、状態が古くて打ち切った相手の数（オーナーだけ）。</summary>
+        public int contactCount;
+        public int contactCutoffCount;
+
+        [Header("接触用の姿勢（実行中に変わる。相手が読む）")]
+        public Vector3 contactBoxCenter;
+        public Quaternion contactBoxRotation = Quaternion.identity;
+        public Vector3 contactVelocity;
+        public Vector3 contactBoxHalf;
+        public float contactRadius;
+
         private bool _started;
         private RigidbodyInterpolation _ownerInterpolation = RigidbodyInterpolation.None;
+
+        // 接触：ルートから見た車体の箱の中心と向き（始まるときに覚える）
+        private bool _hasBox;
+        private Vector3 _boxLocalCenter;
+        private Quaternion _boxLocalRotation = Quaternion.identity;
 
         // 送る側
         private float _stillTime;
@@ -142,6 +171,7 @@ namespace Yakimannzyuu.YakimaTank
                 _ownerInterpolation = body.interpolation;
             }
 
+            _RememberBox();
             _started = true;
             _RefreshOwner();
             if (_IsLocalOwner())
@@ -154,6 +184,27 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             SendCustomEventDelayedSeconds(nameof(_WarnIfNoRegistry), 2f);
+        }
+
+        /// <summary>
+        /// ルートから見た車体の箱を覚える。接触用の姿勢（Rigidbody の値や先読みした状態）に掛けて、箱の位置と向きを求める。
+        /// 表示の Transform から求めない。オーナー以外の画面の表示は送る間隔の 2 倍ほど前の姿勢で、接触は今の時刻に近づけた姿勢を使うため。
+        /// </summary>
+        private void _RememberBox()
+        {
+            if (!Utilities.IsValid(bodyCollider) || !Utilities.IsValid(body))
+            {
+                return;
+            }
+
+            Transform root = body.transform;
+            Transform box = bodyCollider.transform;
+            Quaternion inverse = Quaternion.Inverse(root.rotation);
+            _boxLocalCenter = inverse * (box.TransformPoint(bodyCollider.center) - root.position);
+            _boxLocalRotation = inverse * box.rotation;
+            contactBoxHalf = Vector3.Scale(bodyCollider.size, box.lossyScale) * 0.5f;
+            contactRadius = contactBoxHalf.magnitude;
+            _hasBox = true;
         }
 
         public void _WarnIfNoRegistry()
@@ -325,6 +376,8 @@ namespace Yakimannzyuu.YakimaTank
         private void _BecomeRemote()
         {
             isOwnerMode = false;
+            contactCount = 0;
+            contactCutoffCount = 0;
             _pendingSend = false;
             _awaitingSerialization = false;
             if (Utilities.IsValid(vehicle))
@@ -670,6 +723,118 @@ namespace Yakimannzyuu.YakimaTank
         public float _GetAge()
         {
             return _historyCount == 0 ? -1f : Time.realtimeSinceStartup - _historyTimes[_historyCount - 1];
+        }
+
+        /// <summary>
+        /// 接触用の姿勢（仕様書 0.4.0 の 1.2）を、車体の箱の位置と向き・速度にして contactBox… に書く。相手の同期の Udon が呼ぶ。
+        /// オーナーなら Rigidbody の今の値、オーナー以外なら最新の有効な状態を今の時刻まで進めた値。表示の Transform は動かさない。
+        /// </summary>
+        public int _UpdateContactPose(float now)
+        {
+            if (!_started || !_hasBox)
+            {
+                return ContactNone;
+            }
+
+            Vector3 position;
+            Quaternion rotation;
+            if (isOwnerMode)
+            {
+                position = body.position;
+                rotation = body.rotation;
+                contactVelocity = body.velocity;
+            }
+            else
+            {
+                if (_historyCount == 0)
+                {
+                    return ContactNone;
+                }
+
+                int latest = _historyCount - 1;
+                bool stopped = _historyStops[latest];
+                float age = now - _historyTimes[latest];
+                int status = ContactStatus(true, stopped, age);
+                if (status != ContactUse)
+                {
+                    return status;
+                }
+
+                position = ContactPosition(_historyPositions[latest], _historyVelocities[latest], stopped, age, maxExtrapolation);
+                rotation = ContactRotation(_historyRotations[latest], _historyAngulars[latest], stopped, age, maxExtrapolation);
+                contactVelocity = ContactVelocity(_historyVelocities[latest], stopped);
+            }
+
+            contactBoxCenter = position + rotation * _boxLocalCenter;
+            contactBoxRotation = rotation * _boxLocalRotation;
+            return ContactUse;
+        }
+
+        /// <summary>
+        /// 車両同士の簡易衝突（仕様書 0.4.0）。オーナーの車両が物理の更新の最初に呼び、自車の速度に足す変化を返す。
+        /// 相手の Rigidbody も位置も動かさない。接触のための同期変数やイベントは使わず、相手の最新の有効な状態から毎回求める。
+        /// </summary>
+        public Vector3 _ContactVelocityChange()
+        {
+            contactCount = 0;
+            contactCutoffCount = 0;
+            if (!isOwnerMode || !Utilities.IsValid(registry) || registry.vehicles == null)
+            {
+                return Vector3.zero;
+            }
+
+            float now = Time.realtimeSinceStartup;
+            if (_UpdateContactPose(now) != ContactUse)
+            {
+                return Vector3.zero;
+            }
+
+            float deltaTime = Time.fixedDeltaTime;
+            Vector3 stop = Vector3.zero;
+            Vector3 push = Vector3.zero;
+            YakimaTankVehicleSync[] others = registry.vehicles;
+            for (int index = 0; index < others.Length; index++)
+            {
+                YakimaTankVehicleSync other = others[index];
+                if (!Utilities.IsValid(other) || other == this)
+                {
+                    continue;
+                }
+
+                int status = other._UpdateContactPose(now);
+                if (status == ContactStale)
+                {
+                    contactCutoffCount++;
+                    continue;
+                }
+
+                if (status != ContactUse)
+                {
+                    continue;
+                }
+
+                // 箱を囲む球が離れていれば、重なりを求めない（Udon の呼び出しを減らす。結果は変わらない）。
+                float reach = contactRadius + other.contactRadius;
+                if ((other.contactBoxCenter - contactBoxCenter).sqrMagnitude >= reach * reach)
+                {
+                    continue;
+                }
+
+                Vector3 separation = HorizontalPenetration(contactBoxCenter, contactBoxRotation, contactBoxHalf,
+                    other.contactBoxCenter, other.contactBoxRotation, other.contactBoxHalf);
+                float depth = separation.magnitude;
+                if (depth <= 0f)
+                {
+                    continue;
+                }
+
+                Vector3 normal = separation / depth;
+                contactCount++;
+                stop += ContactStopChange(contactVelocity, other.contactVelocity, normal, contactStopRate, deltaTime);
+                push += ContactPush(normal, depth, contactPushStrength, contactMaxPushAcceleration);
+            }
+
+            return ContactTotalChange(stop, push, contactMaxPushAcceleration, deltaTime);
         }
 
         // ---- 計算（EditMode で確かめる） ----

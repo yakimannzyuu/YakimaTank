@@ -309,13 +309,13 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
-        public void デバッグUIの同期の文字はオーナーなら送った回数と要求した回数を出しオーナー以外なら最新の状態の古さを出す()
+        public void デバッグUIの同期の文字はオーナーなら送った回数と要求した回数と接触を出しオーナー以外なら最新の状態の古さを出す()
         {
-            Assert.That(YakimaTankDebugPanel.SyncSummary(true, 3, true, 3, 2, -1f, 9.96f, 10f, 0),
-                Is.EqualTo("OWNER\nOwner 3 (you)\nDriver 3\nEpoch 2\nSent/s 10.0  Req/s 10.0\nRejected 0"));
-            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 2, 0.123f, 0f, 0f, 4),
-                Is.EqualTo("REMOTE\nOwner 3\nDriver -\nEpoch 2\nAge 0.12\nRejected 4"));
-            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 0, -1f, 0f, 0f, 0), Does.Contain("Age -"), "まだ状態を受けていない");
+            Assert.That(YakimaTankDebugPanel.SyncSummary(true, 3, true, 3, 2, -1f, 9.96f, 10f, 0, 2, 1),
+                Is.EqualTo("OWNER\nOwner 3 (you)\nDriver 3\nEpoch 2\nSent/s 10.0  Req/s 10.0\nContact 2  Stale 1\nRejected 0"));
+            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 2, 0.123f, 0f, 0f, 4, 2, 1),
+                Is.EqualTo("REMOTE\nOwner 3\nDriver -\nEpoch 2\nAge 0.12\nRejected 4"), "オーナー以外は接触を計算しないので出さない");
+            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 0, -1f, 0f, 0f, 0, 0, 0), Does.Contain("Age -"), "まだ状態を受けていない");
         }
 
         [Test]

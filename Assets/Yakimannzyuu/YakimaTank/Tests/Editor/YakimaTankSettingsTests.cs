@@ -70,9 +70,72 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         private static readonly string[] AddedInVersion3 = { "sendInterval", "maxExtrapolation" };
+        private static readonly string[] AddedInVersion4 = { "contactStopRate", "contactPushStrength", "contactMaxPushAcceleration" };
 
         [Test]
-        public void 版2の設定を読み込むと版3に移り値と参照を保って足した同期の項目は既定値になる()
+        public void 版3の設定を読み込むと版4に移り値と参照を保って足した接触の項目は既定値になる()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model, "Version3");
+            settings.mass = 1234f;
+            settings.sendInterval = 0.5f;
+            settings.maxExtrapolation = 0.9f;
+            settings.contactStopRate = 1f;
+            settings.contactPushStrength = 2f;
+            settings.contactMaxPushAcceleration = 3f;
+
+            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 3, AddedInVersion4);
+
+            Assert.That(migrated.schemaVersion, Is.EqualTo(4));
+            Assert.That(migrated.mass, Is.EqualTo(1234f));
+            Assert.That(migrated.sendInterval, Is.EqualTo(0.5f));
+            Assert.That(migrated.maxExtrapolation, Is.EqualTo(0.9f));
+            Assert.That(migrated.body, Is.SameAs(_model.transform.Find("Hull")));
+            Assert.That(migrated.contactStopRate, Is.EqualTo(10f), "足した項目が既定値になっていない");
+            Assert.That(migrated.contactPushStrength, Is.EqualTo(20f));
+            Assert.That(migrated.contactMaxPushAcceleration, Is.EqualTo(5f));
+            Assert.That(YakimaTankSetupValidator.Validate(migrated).Where(d => d.Severity == SetupSeverity.Error), Is.Empty);
+        }
+
+        [Test]
+        public void 接触の調整値の初期値は仕様の仮の値()
+        {
+            var settings = ScriptableObject.CreateInstance<YakimaTankSetupSettings>();
+            try
+            {
+                Assert.That(settings.contactStopRate, Is.EqualTo(10f));
+                Assert.That(settings.contactPushStrength, Is.EqualTo(20f));
+                Assert.That(settings.contactMaxPushAcceleration, Is.EqualTo(5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(settings);
+            }
+        }
+
+        [TestCase(nameof(YakimaTankSetupSettings.contactStopRate), -0.01f)]
+        [TestCase(nameof(YakimaTankSetupSettings.contactPushStrength), -0.01f)]
+        [TestCase(nameof(YakimaTankSetupSettings.contactMaxPushAcceleration), -0.01f)]
+        [TestCase(nameof(YakimaTankSetupSettings.contactStopRate), float.NaN)]
+        [TestCase(nameof(YakimaTankSetupSettings.contactMaxPushAcceleration), float.PositiveInfinity)]
+        public void 接触の調整値が負か数でなければErrorになる(string field, float value)
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            typeof(YakimaTankSetupSettings).GetField(field).SetValue(settings, value);
+            Assert.That(YakimaTankSetupValidator.Validate(settings).Any(d => d.Severity == SetupSeverity.Error && d.Field == field), Is.True);
+        }
+
+        [Test]
+        public void 接触の調整値は0なら通る()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            settings.contactStopRate = 0f;
+            settings.contactPushStrength = 0f;
+            settings.contactMaxPushAcceleration = 0f;
+            Assert.That(YakimaTankSetupValidator.HasErrors(YakimaTankSetupValidator.Validate(settings)), Is.False);
+        }
+
+        [Test]
+        public void 版2の設定を読み込むと今の版に移り値と参照を保って足した同期の項目は既定値になる()
         {
             YakimaTankSetupSettings settings = _workspace.CreateSettings(_model, "Version2");
             settings.mass = 1234f;
@@ -81,9 +144,9 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             settings.sendInterval = 0.5f;
             settings.maxExtrapolation = 0.9f;
 
-            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 2, AddedInVersion3);
+            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 2, AddedInVersion3.Concat(AddedInVersion4).ToArray());
 
-            Assert.That(migrated.schemaVersion, Is.EqualTo(3));
+            Assert.That(migrated.schemaVersion, Is.EqualTo(YakimaTankSetupSettings.CurrentSchemaVersion));
             Assert.That(migrated.mass, Is.EqualTo(1234f));
             Assert.That(migrated.gripThreshold, Is.EqualTo(0.9f));
             Assert.That(migrated.seatOffset, Is.EqualTo(Vector3.one));
@@ -130,7 +193,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             settings.seatOffset = Vector3.one;
             string[] addedInVersion2 = { "seatOffset", "gripThreshold", "maxTwistAngle", "maxPushDistance", "reverseThreshold", "deadzone" };
 
-            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 1, addedInVersion2.Concat(AddedInVersion3).ToArray());
+            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 1, addedInVersion2.Concat(AddedInVersion3).Concat(AddedInVersion4).ToArray());
 
             Assert.That(migrated.schemaVersion, Is.EqualTo(YakimaTankSetupSettings.CurrentSchemaVersion));
             Assert.That(migrated.mass, Is.EqualTo(1234f));

@@ -18,6 +18,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private static readonly string[] SeatFieldNames = YakimaTankRuntimeValues.SeatNames.ToArray();
         private static readonly string[] VRInputFieldNames = YakimaTankRuntimeValues.VRInputNames.ToArray();
         private static readonly string[] SyncFieldNames = YakimaTankRuntimeValues.SyncNames.ToArray();
+        private static readonly string[] ContactFieldNames = YakimaTankRuntimeValues.ContactNames.ToArray();
 
         private static readonly string[] SuspensionFieldNames =
         {
@@ -56,7 +57,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
-            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃・車両同士の衝突。いまできるのは、乗って Desktop と VR で走り、ほかの人の画面に同期することまで（車両同士はすり抜ける）。", MessageType.Info);
+            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃。いまできるのは、乗って Desktop と VR で走り、ほかの人の画面に同期し、車両同士がぶつかって止まる・ゆっくり押せることまで。", MessageType.Info);
             settings = (YakimaTankSetupSettings)EditorGUILayout.ObjectField("設定アセット", settings, typeof(YakimaTankSetupSettings), false);
             if (settings == null)
             {
@@ -159,6 +160,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Section("座席（Play 中に再適用できる）", SeatFieldNames);
             Section("操作（VR。Play 中に再適用できる）", VRInputFieldNames);
             Section("同期（Play 中に再適用できる）", SyncFieldNames);
+            Section("接触（Play 中に再適用できる）", ContactFieldNames);
         }
 
         private Transform TransformPopup(string label, Transform current, Transform[] nodes, string[] paths, bool allowNone)

@@ -52,14 +52,26 @@ namespace Yakimannzyuu.YakimaTank.Editor
             nameof(YakimaTankVehicleSync.maxExtrapolation)
         };
 
-        /// <summary>値を受ける Udon の型と、その型が受ける名前の組。</summary>
+        /// <summary>接触。相手の履歴を持つ同期の Udon が受ける。</summary>
+        public static readonly IReadOnlyList<string> ContactNames = new[]
+        {
+            nameof(YakimaTankVehicleSync.contactStopRate),
+            nameof(YakimaTankVehicleSync.contactPushStrength),
+            nameof(YakimaTankVehicleSync.contactMaxPushAcceleration)
+        };
+
+        /// <summary>値を受ける Udon の型と、その型が受ける名前の組。1 つの型が複数の組を受けることがある（同期の Udon は同期と接触）。</summary>
         public static readonly IReadOnlyList<KeyValuePair<Type, IReadOnlyList<string>>> Groups = new[]
         {
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicle), Names),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankSeat), SeatNames),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVRInput), VRInputNames),
-            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), SyncNames)
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), SyncNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), ContactNames)
         };
+
+        /// <summary>値を受ける Udon の型（重ならない）。</summary>
+        public static IEnumerable<Type> Receivers => Groups.Select(group => group.Key).Distinct();
 
         public static IEnumerable<string> AllNames => Groups.SelectMany(group => group.Value);
 
@@ -100,15 +112,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         public static IReadOnlyList<string> NamesFor(Type behaviour)
         {
-            foreach (KeyValuePair<Type, IReadOnlyList<string>> group in Groups)
-            {
-                if (group.Key == behaviour)
-                {
-                    return group.Value;
-                }
-            }
-
-            return Array.Empty<string>();
+            return Groups.Where(group => group.Key == behaviour).SelectMany(group => group.Value).ToList();
         }
 
         public static void Copy(YakimaTankSetupSettings from, YakimaTankSetupSettings to)
