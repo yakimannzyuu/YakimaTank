@@ -9,7 +9,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
     [CreateAssetMenu(fileName = "YakimaTankSetup", menuName = "YakimaTank/Setup Settings")]
     public sealed class YakimaTankSetupSettings : ScriptableObject, ISerializationCallbackReceiver
     {
-        public const int CurrentSchemaVersion = 5;
+        public const int CurrentSchemaVersion = 6;
 
         public int schemaVersion = CurrentSchemaVersion;
 
@@ -103,6 +103,16 @@ namespace Yakimannzyuu.YakimaTank.Editor
         [Tooltip("装填の時間（秒）。同期の送る間隔より長くする")]
         public float reloadTime = 3f;
 
+        [Header("HP・復活（Play 中に再適用できる）")]
+        [Tooltip("最大 HP（1 以上）。整数に四捨五入する。Play 中に変えると、次の復活で最大になる")]
+        public float maxHealth = 100f;
+
+        [Tooltip("1 発のダメージ（0 以上）。撃った車両のこの値で、当たった車両の HP を引く。整数に四捨五入する")]
+        public float damage = 25f;
+
+        [Tooltip("破壊から復活までの待ち時間（秒、0 以上）")]
+        public float respawnDelay = 5f;
+
         [Header("足回り（生成で反映）")]
         [Tooltip("0 なら転輪のメッシュから求める")]
         public float wheelRadius;
@@ -140,7 +150,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
         }
 
         /// <summary>
-        /// 版 1 → 2（座席と VR の項目）、版 2 → 3（同期の項目）、版 3 → 4（接触の項目）、版 4 → 5（砲塔・武器の項目）：足した項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
+        /// 版 1 → 2（座席と VR の項目）、版 2 → 3（同期の項目）、版 3 → 4（接触の項目）、版 4 → 5（砲塔・武器の項目）、版 5 → 6（HP・復活の項目）：
+        /// 足した項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
         /// 前からある値と参照は名前を変えていないので、そのまま読める。版だけを上げればよい。今より新しい版は変えない（検証で Error）。
         /// </summary>
         public static int Migrate(int version)

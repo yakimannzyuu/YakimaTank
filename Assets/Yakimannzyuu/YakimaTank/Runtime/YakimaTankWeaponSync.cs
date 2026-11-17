@@ -2,13 +2,14 @@ using UdonSharp;
 using UnityEngine;
 using VRC.SDKBase;
 using VRC.Udon.Common;
+using VRC.Udon.Common.Interfaces;
 
 namespace Yakimannzyuu.YakimaTank
 {
     /// <summary>
     /// 武器の同期（仕様書 0.5.0）。ルートの子の `Weapon` に置き、車体とは別の所有権の領域にする（将来、武器だけを砲手に渡せる）。
     /// オーナーは入力から砲塔と砲身を回し、装填して撃ち、角度・装填・発射の番号と砲口を送る。オーナー以外は最新の角度へ寄せ、
-    /// 発射の番号が変わったら見た目の砲弾を出す。命中を数えるのは撃った人のクライアントの砲弾だけ（0.5.0 は当たった車両の番号を記録するまで）。
+    /// 発射の番号が変わったら見た目の砲弾を出す。命中を数えるのは撃った人のクライアントの砲弾だけで、当たった車両の生存の状態へ申告する（0.6.0）。
     /// 計算は静的な関数に分けて EditMode で確かめる。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
@@ -48,10 +49,16 @@ namespace Yakimannzyuu.YakimaTank
         [Tooltip("装填の時間（秒）")]
         public float reloadTime = 3f;
 
+        [Tooltip("1 発のダメージ。当たった車両のオーナーが、撃った車両のこの値で HP を引く")]
+        public float damage = 25f;
+
         [Header("生成で決まる値")]
         public YakimaTankVehicleSync vehicleSync;
         public YakimaTankSeat seat;
         public YakimaTankControlState control;
+
+        /// <summary>自分の車両の生存の状態。破壊の間は撃たない。復活で自分の領域を戻す。</summary>
+        public YakimaTankLife life;
         public Transform turret;
         public Transform barrel;
 
@@ -105,9 +112,10 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>受けた状態から出した見た目の砲弾の数（テストと確かめ用）。</summary>
         public int shownFires;
 
-        /// <summary>撃った人のクライアントで、自分の砲弾が当たった車両の番号と、当たった数（0.5.0 は記録だけ）。</summary>
+        /// <summary>撃った人のクライアントで、自分の砲弾が当たった車両の番号と、当たった数と、送った命中の申告の数。</summary>
         public int lastHitVehicle = NoVehicle;
         public int hitCount;
+        public int sentHits;
 
         private bool _started;
         private bool _hasState;
@@ -203,12 +211,32 @@ namespace Yakimannzyuu.YakimaTank
             aimByRate = value;
         }
 
-        /// <summary>撃てるか：車体と武器の両方の所有権を持ち、自分が座って入力が有効になっている。</summary>
+        /// <summary>撃てるか：車体と武器の両方の所有権を持ち、自分が座って入力が有効になっていて、車両が破壊されていない。</summary>
         private bool _IsArmed()
         {
             return isOwnerMode
                    && Utilities.IsValid(seat) && seat.localSeated && !seat.waitingOwnership
-                   && Utilities.IsValid(vehicleSync) && vehicleSync.isOwnerMode;
+                   && Utilities.IsValid(vehicleSync) && vehicleSync.isOwnerMode
+                   && (!Utilities.IsValid(life) || !life._IsDestroyed());
+        }
+
+        /// <summary>
+        /// 生存の状態が、復活の世代が変わったのを見て呼ぶ。武器のオーナーなら、自分の領域（角度・装填）を初期値に戻して送る。
+        /// ほかの人の画面は、武器の同期で戻る。飛んでいる自分の砲弾は残す（相打ちがある）。
+        /// </summary>
+        public void _OnRespawned()
+        {
+            if (!isOwnerMode)
+            {
+                return;
+            }
+
+            yaw = 0f;
+            pitch = Mathf.Clamp(0f, gunPitchMin, gunPitchMax);
+            loaded = true;
+            reloadTimer = 0f;
+            _pendingSend = true;
+            _ApplyAngles();
         }
 
         private void Update()
@@ -290,11 +318,11 @@ namespace Yakimannzyuu.YakimaTank
             Transform from = Utilities.IsValid(muzzle) ? muzzle : transform;
             firePosition = from.position;
             fireDirection = from.forward;
-            _LaunchShell(firePosition, fireDirection, true);
+            _LaunchShell(firePosition, fireDirection, true, fireNumber);
             _pendingSend = true;
         }
 
-        private void _LaunchShell(Vector3 position, Vector3 direction, bool counting)
+        private void _LaunchShell(Vector3 position, Vector3 direction, bool counting, int number)
         {
             if (shells.Length == 0)
             {
@@ -317,15 +345,32 @@ namespace Yakimannzyuu.YakimaTank
             YakimaTankShell shell = shells[chosen];
             if (Utilities.IsValid(shell))
             {
-                shell._Launch(position, direction * shellSpeed, counting);
+                shell._Launch(position, direction * shellSpeed, counting, number);
             }
         }
 
-        /// <summary>撃った人のクライアントの砲弾が、ほかの車両の命中用のトリガーに当たったときに呼ぶ。0.5.0 は記録だけ（申告と HP は 0.6.0）。</summary>
-        public void _OnShellHit(int vehicleIndex)
+        /// <summary>
+        /// 撃った人のクライアントの砲弾が、ほかの車両の命中用のトリガーに当たったときに呼ぶ。当たった車両の生存の状態のオーナーへ、
+        /// 撃った車両の番号・発射の番号・いま見えている相手の復活の世代を申告する（仕様書 0.6.0 の 1.2）。送り直さない。
+        /// </summary>
+        public void _OnShellHit(YakimaTankHitbox hitbox, int number)
         {
-            lastHitVehicle = vehicleIndex;
+            if (!Utilities.IsValid(hitbox) || !Utilities.IsValid(hitbox.vehicle))
+            {
+                return;
+            }
+
+            lastHitVehicle = hitbox.vehicle.vehicleIndex;
             hitCount++;
+            YakimaTankLife target = hitbox.life;
+            int shooter = Utilities.IsValid(vehicleSync) ? vehicleSync.vehicleIndex : NoVehicle;
+            if (!Utilities.IsValid(target) || shooter < 0)
+            {
+                return;
+            }
+
+            sentHits++;
+            target.SendCustomNetworkEvent(NetworkEventTarget.Owner, nameof(YakimaTankLife.ReceiveHit), shooter, number, target.respawnGeneration);
         }
 
         private void _ApplyAngles()
@@ -395,7 +440,7 @@ namespace Yakimannzyuu.YakimaTank
             loaded = syncLoaded;
             if (ShouldShowFire(first, syncFireNumber, fireNumber) && syncFireDirection.sqrMagnitude > 0.25f)
             {
-                _LaunchShell(syncFirePosition, syncFireDirection.normalized, false);
+                _LaunchShell(syncFirePosition, syncFireDirection.normalized, false, syncFireNumber);
                 shownFires++;
             }
 

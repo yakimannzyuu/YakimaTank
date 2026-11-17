@@ -48,6 +48,9 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>最初の位置に戻したことを伝える同期の Udon。</summary>
         public YakimaTankVehicleSync sync;
 
+        /// <summary>生存の状態。破壊の間は入力を受けず、停止中のブレーキで止める。</summary>
+        public YakimaTankLife life;
+
         [Header("状態（実行中に変わる）")]
         public bool isReady;
 
@@ -127,6 +130,20 @@ namespace Yakimannzyuu.YakimaTank
         /// </summary>
         public void _ApplySettingsAndReset()
         {
+            _Initialize();
+        }
+
+        /// <summary>
+        /// ゲームの中の復活（仕様書 0.6.0 の 1.3）。生存の状態のオーナー（車体のオーナー）が呼ぶ。
+        /// Editor の「最初の位置に戻す」と入口を分け、中の初期化だけを共用する（車体の世代が進み、ほかの人の画面で補間せずに置かれる）。
+        /// </summary>
+        public void _Respawn()
+        {
+            _Initialize();
+        }
+
+        private void _Initialize()
+        {
             isReady = false;
             generation++;
             throttleInput = 0f;
@@ -186,7 +203,12 @@ namespace Yakimannzyuu.YakimaTank
                 push = sync.contactPush;
             }
 
-            if (localDriverSeated && Utilities.IsValid(control))
+            if (Utilities.IsValid(life) && life._IsDestroyed())
+            {
+                // 破壊の間は入力を止め、停止中のブレーキにする（直接の SetDriveInput も上書きする）。
+                SetDriveInput(0f, 0f, 0f);
+            }
+            else if (localDriverSeated && Utilities.IsValid(control))
             {
                 SetDriveInput(ControlThrottle(control.throttle, control.gear), control.steering, control.brake);
             }

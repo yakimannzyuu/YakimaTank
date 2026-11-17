@@ -290,6 +290,14 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 // 装填の時間が送る間隔以下だと、送る前に次を撃ち、ほかの人の画面で発射の表示がいつも欠ける（仕様書 0.5.0 の 1.4）。
                 error(nameof(settings.reloadTime), $"同期の送る間隔（{settings.sendInterval}）より長くしてください（今は {settings.reloadTime}）。");
             }
+
+            if (!IsFinite(settings.maxHealth) || settings.maxHealth < 1f)
+            {
+                error(nameof(settings.maxHealth), $"1 以上にしてください（今は {settings.maxHealth}）。");
+            }
+
+            NotNegative(nameof(settings.damage), settings.damage);
+            NotNegative(nameof(settings.respawnDelay), settings.respawnDelay);
         }
 
         private static bool IsFinite(float value)

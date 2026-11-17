@@ -23,6 +23,9 @@ namespace Yakimannzyuu.YakimaTank
         public bool counting;
         public float age;
 
+        /// <summary>撃ったときの発射の番号。命中の申告に付ける。</summary>
+        public int fireNumber;
+
         private Vector3 _position;
         private Vector3 _velocity;
         private float[] _distances = new float[MaxHits];
@@ -35,11 +38,12 @@ namespace Yakimannzyuu.YakimaTank
             _SetVisible(active);
         }
 
-        /// <summary>撃つ。counting は、撃った人のクライアントの砲弾か（命中を数える）。</summary>
-        public void _Launch(Vector3 position, Vector3 velocity, bool count)
+        /// <summary>撃つ。counting は、撃った人のクライアントの砲弾か（命中を数える）。number は発射の番号。</summary>
+        public void _Launch(Vector3 position, Vector3 velocity, bool count, int number)
         {
             active = true;
             counting = count;
+            fireNumber = number;
             age = 0f;
             _position = position;
             _velocity = velocity;
@@ -93,7 +97,7 @@ namespace Yakimannzyuu.YakimaTank
                 {
                     if (counting && _targets[chosen])
                     {
-                        weapon._OnShellHit(_hitboxes[chosen].vehicle.vehicleIndex);
+                        weapon._OnShellHit(_hitboxes[chosen], fireNumber);
                     }
 
                     transform.position = hits[chosen].point;

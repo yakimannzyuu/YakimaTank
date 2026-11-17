@@ -138,6 +138,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             // ルートの車両の Udon と同期の Udon は、同じ GameObject なので Manual にそろえる。
             Assert.That(Vehicle(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.Manual));
             Assert.That(Udon<YakimaTankVehicleSync>(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.Manual));
+            Assert.That(Udon<YakimaTankLife>(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.Manual));
             Assert.That(Udon<YakimaTankControlState>(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.None));
             Assert.That(Udon<YakimaTankBoarding>(prefab).SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.None));
             // 座席は NoVariableSync。U# はそれを Continuous にそろえる（変数は送らない）。
@@ -242,6 +243,63 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(Value<Vector3>(weapon, nameof(YakimaTankWeaponSync.turretAxis)), Is.EqualTo(Vector3.up), "砲塔の左右の軸は車体の上");
             Assert.That(Value<Vector3>(weapon, nameof(YakimaTankWeaponSync.barrelAxis)), Is.EqualTo(Vector3.right), "砲身の上下の軸は車体の右");
             Assert.That(Value<float>(weapon, nameof(YakimaTankWeaponSync.reloadTime)), Is.EqualTo(_settings.reloadTime));
+        }
+
+        [Test]
+        public void 生存の状態のUdonはルートに1つで車両と車体の同期と座席と武器を指しそれらと命中用のトリガーからも指されHPと復活の値が入る()
+        {
+            _settings.maxHealth = 80f;
+            _settings.damage = 20f;
+            _settings.respawnDelay = 7f;
+            GameObject prefab = GenerateOrFail();
+            UdonBehaviour life = Udon<YakimaTankLife>(prefab);
+            UdonBehaviour sync = Udon<YakimaTankVehicleSync>(prefab);
+            UdonBehaviour seat = Udon<YakimaTankSeat>(prefab);
+            UdonBehaviour weapon = Udon<YakimaTankWeaponSync>(prefab);
+
+            Assert.That(life.gameObject, Is.SameAs(prefab), "ルート（車体の所有権の単位）");
+            Assert.That(Reference(life, nameof(YakimaTankLife.vehicle)), Is.SameAs(Vehicle(prefab)));
+            Assert.That(Reference(life, nameof(YakimaTankLife.vehicleSync)), Is.SameAs(sync));
+            Assert.That(Reference(life, nameof(YakimaTankLife.seat)), Is.SameAs(seat));
+            Assert.That(Reference(life, nameof(YakimaTankLife.weapon)), Is.SameAs(weapon));
+            Assert.That(Reference(Vehicle(prefab), nameof(YakimaTankVehicle.life)), Is.SameAs(life));
+            Assert.That(Reference(seat, nameof(YakimaTankSeat.life)), Is.SameAs(life));
+            Assert.That(Reference(weapon, nameof(YakimaTankWeaponSync.life)), Is.SameAs(life));
+            Assert.That(Reference(sync, nameof(YakimaTankVehicleSync.weapon)), Is.SameAs(weapon), "撃った車両の武器を一覧から引く");
+            foreach (UdonBehaviour hitbox in prefab.GetComponentsInChildren<UdonBehaviour>(true)
+                         .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankHitbox)))
+            {
+                Assert.That(Reference(hitbox, nameof(YakimaTankHitbox.life)), Is.SameAs(life), hitbox.name);
+            }
+
+            Assert.That(Value<float>(life, nameof(YakimaTankLife.maxHealth)), Is.EqualTo(80f));
+            Assert.That(Value<float>(life, nameof(YakimaTankLife.respawnDelay)), Is.EqualTo(7f));
+            Assert.That(Value<float>(weapon, nameof(YakimaTankWeaponSync.damage)), Is.EqualTo(20f), "ダメージは撃つ側の武器が持つ");
+        }
+
+        [Test]
+        public void HPのバーはルートの下でモデルの上端より上にありコライダーがなく出力先のフォルダの材質を使う()
+        {
+            GameObject prefab = GenerateOrFail();
+            UdonBehaviour life = Udon<YakimaTankLife>(prefab);
+            var bar = (Transform)Reference(life, nameof(YakimaTankLife.healthBar));
+            var fill = (Transform)Reference(life, nameof(YakimaTankLife.healthFill));
+
+            Assert.That(bar.parent, Is.SameAs(prefab.transform));
+            Assert.That(bar.name, Is.EqualTo(YakimaTankSetupService.HealthBarName));
+            Assert.That(fill.parent, Is.SameAs(bar));
+            Assert.That(YakimaTankBounds.TryGetLocalBounds(prefab.transform.Find(YakimaTankSetupService.ModelName), prefab.transform, out Bounds model), Is.True);
+            Assert.That(bar.localPosition.y, Is.EqualTo(model.max.y + YakimaTankSetupService.HealthBarClearance).Within(1e-4f), "モデルの上端より 0.6 m 上");
+            Assert.That(bar.localPosition.x, Is.EqualTo(model.center.x).Within(1e-4f));
+            Assert.That(bar.localPosition.z, Is.EqualTo(model.center.z).Within(1e-4f));
+            Assert.That(bar.GetComponentsInChildren<Collider>(true), Is.Empty, "砲弾と Interact を遮らない");
+            Assert.That(fill.localPosition.x, Is.EqualTo(-YakimaTankSetupService.HealthBarWidth * 0.5f).Within(1e-4f), "中身は左端を軸に縮める");
+            Assert.That(fill.localPosition.z, Is.LessThan(0f), "中身は背景の手前（頭の方）");
+            string folder = System.IO.Path.GetDirectoryName(_settings.outputPrefabPath)?.Replace('\\', '/') + "/";
+            Assert.That(AssetDatabase.GetAssetPath(bar.Find(YakimaTankSetupService.HealthBackName).GetComponent<MeshRenderer>().sharedMaterial),
+                Is.EqualTo(folder + YakimaTankSetupService.HealthBackMaterialName));
+            Assert.That(AssetDatabase.GetAssetPath(fill.GetComponentInChildren<MeshRenderer>().sharedMaterial),
+                Is.EqualTo(folder + YakimaTankSetupService.HealthFillMaterialName));
         }
 
         [Test]
@@ -558,7 +616,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 {
                     typeof(YakimaTankVehicle), typeof(YakimaTankVehicleSync), typeof(YakimaTankControlState), typeof(YakimaTankDesktopInput),
                     typeof(YakimaTankVRInput), typeof(YakimaTankBoarding), typeof(YakimaTankSeat), typeof(YakimaTankWeaponSync),
-                    typeof(YakimaTankHitbox), typeof(YakimaTankHitbox)
+                    typeof(YakimaTankHitbox), typeof(YakimaTankHitbox), typeof(YakimaTankLife)
                 }.Concat(Enumerable.Repeat(typeof(YakimaTankShell), YakimaTankSetupMath.ShellCount(_settings.shellLifetime, _settings.reloadTime)))));
             Assert.That(prefab.GetComponentsInChildren<VRC.SDK3.Components.VRCStation>(true), Has.Length.EqualTo(1));
             Assert.That(prefab.transform.Cast<Transform>().Count(t => PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)), Is.EqualTo(1));

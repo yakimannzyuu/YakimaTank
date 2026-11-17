@@ -53,6 +53,18 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public const string HitboxName = "Hitbox";
         public const string TurretHitboxName = "YakimaTankTurretHitbox";
         public const string ShellMaterialName = "YakimaTankShell.mat";
+        public const string HealthBarName = "HealthBar";
+        public const string HealthBackName = "Back";
+        public const string HealthFillName = "Fill";
+        public const string HealthFillBarName = "Bar";
+        public const string HealthBackMaterialName = "YakimaTankHealthBack.mat";
+        public const string HealthFillMaterialName = "YakimaTankHealthFill.mat";
+
+        /// <summary>HP のバーを置く高さ（モデルの上端からの m、仕様書 0.6.0 の 1.7）と、バーの幅・高さ・厚さ（m）。</summary>
+        public const float HealthBarClearance = 0.6f;
+        public const float HealthBarWidth = 1.2f;
+        public const float HealthBarHeight = 0.12f;
+        public const float HealthBarDepth = 0.02f;
 
         /// <summary>見た目の砲弾の球の直径（m）。</summary>
         public const float ShellSize = 0.2f;
@@ -451,9 +463,28 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             YakimaTankWeaponSync weapon = BuildWeapon(settings, root.transform, turret, barrel, sync, seat, control, Record, out YakimaTankShell[] shells);
             seat.weapon = weapon;
+            sync.weapon = weapon;
             YakimaTankHitbox[] hitboxes = BuildHitboxes(root.transform, turret, barrel, box, modelBounds, sync, Record);
 
-            foreach (UdonSharpBehaviour proxy in new UdonSharpBehaviour[] { vehicle, sync, control, desktop, vr, boarding, seat, weapon }.Concat(shells).Concat(hitboxes))
+            // 生存の状態は車体の領域なので、ルート（車体の所有権の単位）に置く（仕様書 0.6.0 の 1.1）。
+            YakimaTankLife life = FindOrAdd<YakimaTankLife>(root, out bool lifeCreated);
+            YakimaTankRuntimeValues.WriteToProxy(settings, life);
+            life.vehicle = vehicle;
+            life.vehicleSync = sync;
+            life.seat = seat;
+            life.weapon = weapon;
+            BuildHealthBar(settings, root.transform, modelBounds, life, Record);
+            vehicle.life = life;
+            seat.life = life;
+            weapon.life = life;
+            foreach (YakimaTankHitbox hitbox in hitboxes)
+            {
+                hitbox.life = life;
+            }
+
+            Record(nameof(YakimaTankLife), lifeCreated);
+
+            foreach (UdonSharpBehaviour proxy in new UdonSharpBehaviour[] { vehicle, sync, life, control, desktop, vr, boarding, seat, weapon }.Concat(shells).Concat(hitboxes))
             {
                 UdonSharpEditorUtility.CopyProxyToUdon(proxy);
                 ApplySyncMethod(proxy);
@@ -604,6 +635,61 @@ namespace Yakimannzyuu.YakimaTank.Editor
             return hitboxes;
         }
 
+        /// <summary>
+        /// HP のバー（仕様書 0.6.0 の 1.7）。ルートの下、モデルの上端より上に置く。背景の箱と、左端を軸に左右へ縮める中身の箱。
+        /// 中身は背景の手前（バーの -Z。実行中は頭の方へ -Z を向ける）に置く。コライダーは付けない（砲弾と Interact を遮らない）。
+        /// 素材は同梱しない（Unity の箱と、出力先のフォルダに作る単色の材質）。
+        /// </summary>
+        private static void BuildHealthBar(YakimaTankSetupSettings settings, Transform root, Bounds modelBounds, YakimaTankLife life, Action<string, bool> record)
+        {
+            Transform bar = EnsureChild(root, HealthBarName, out bool barCreated);
+            bar.localPosition = new Vector3(modelBounds.center.x, modelBounds.max.y + HealthBarClearance, modelBounds.center.z);
+            bar.localRotation = Quaternion.identity;
+            bar.localScale = Vector3.one;
+            Mesh cube = Resources.GetBuiltinResource<Mesh>("Cube.fbx");
+
+            Transform back = EnsureChild(bar, HealthBackName, out bool backCreated);
+            back.localPosition = Vector3.zero;
+            back.localRotation = Quaternion.identity;
+            back.localScale = new Vector3(HealthBarWidth, HealthBarHeight, HealthBarDepth);
+            Box(back, cube, EnsureColorMaterial(settings.outputPrefabPath, HealthBackMaterialName, new Color(0.1f, 0.1f, 0.1f)));
+
+            Transform fill = EnsureChild(bar, HealthFillName, out bool fillCreated);
+            fill.localPosition = new Vector3(-HealthBarWidth * 0.5f, 0f, -HealthBarDepth);
+            fill.localRotation = Quaternion.identity;
+            fill.localScale = Vector3.one;
+            Transform fillBar = EnsureChild(fill, HealthFillBarName, out bool fillBarCreated);
+            fillBar.localPosition = new Vector3(HealthBarWidth * 0.5f, 0f, 0f);
+            fillBar.localRotation = Quaternion.identity;
+            fillBar.localScale = new Vector3(HealthBarWidth, HealthBarHeight * 0.7f, HealthBarDepth);
+            Box(fillBar, cube, EnsureColorMaterial(settings.outputPrefabPath, HealthFillMaterialName, new Color(0.2f, 0.85f, 0.3f)));
+
+            life.healthBar = bar;
+            life.healthFill = fill;
+            record(HealthBarName, barCreated || backCreated || fillCreated || fillBarCreated);
+        }
+
+        private static void Box(Transform target, Mesh mesh, Material material)
+        {
+            MeshFilter filter = target.GetComponent<MeshFilter>();
+            if (filter == null)
+            {
+                filter = target.gameObject.AddComponent<MeshFilter>();
+            }
+
+            filter.sharedMesh = mesh;
+            MeshRenderer renderer = target.GetComponent<MeshRenderer>();
+            if (renderer == null)
+            {
+                renderer = target.gameObject.AddComponent<MeshRenderer>();
+            }
+
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+            renderer.enabled = true;
+        }
+
         /// <summary>砲塔の箱の置き場所が変わったとき（モデルを差し替えたとき）に、前の箱を残さない。</summary>
         private static void RemoveChild(Transform parent, string name)
         {
@@ -652,11 +738,20 @@ namespace Yakimannzyuu.YakimaTank.Editor
             return mask;
         }
 
-        /// <summary>見た目の砲弾の材質。パッケージは書けないことがある（VCC や git URL で入れると読むだけ）ので、出力先のフォルダに作る。</summary>
+        /// <summary>見た目の砲弾の材質。</summary>
         private static Material EnsureShellMaterial(string outputPrefabPath)
         {
+            return EnsureColorMaterial(outputPrefabPath, ShellMaterialName, new Color(1f, 0.75f, 0.2f));
+        }
+
+        /// <summary>
+        /// 単色の材質。パッケージは書けないことがある（VCC や git URL で入れると読むだけ）ので、出力先のフォルダに作る。
+        /// もうあれば使い回す（利用者が変えた色を戻さない）。
+        /// </summary>
+        private static Material EnsureColorMaterial(string outputPrefabPath, string name, Color color)
+        {
             string folder = Path.GetDirectoryName(outputPrefabPath)?.Replace(Path.DirectorySeparatorChar, '/');
-            string path = folder + "/" + ShellMaterialName;
+            string path = folder + "/" + name;
             var material = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (material != null)
             {
@@ -664,7 +759,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             EnsureFolder(folder);
-            material = new Material(Shader.Find("Unlit/Color")) { color = new Color(1f, 0.75f, 0.2f) };
+            material = new Material(Shader.Find("Unlit/Color")) { color = color };
             AssetDatabase.CreateAsset(material, path);
             return material;
         }
@@ -917,7 +1012,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 new KeyValuePair<Type, int>(typeof(YakimaTankSeat), 1),
                 new KeyValuePair<Type, int>(typeof(YakimaTankWeaponSync), 1),
                 new KeyValuePair<Type, int>(typeof(YakimaTankShell), YakimaTankSetupMath.ShellCount(settings.shellLifetime, settings.reloadTime)),
-                new KeyValuePair<Type, int>(typeof(YakimaTankHitbox), 2)
+                new KeyValuePair<Type, int>(typeof(YakimaTankHitbox), 2),
+                new KeyValuePair<Type, int>(typeof(YakimaTankLife), 1)
             };
         }
 
@@ -972,6 +1068,15 @@ namespace Yakimannzyuu.YakimaTank.Editor
                     hitboxes.Any(hitbox => (hitbox.transform.parent == turret || hitbox.transform.parent == root.transform) && hitbox.name == TurretHitboxName),
                 "命中用のトリガーが、車体と砲塔の Default のトリガーで車体の同期の Udon を指していません。");
 
+            YakimaTankLife life = FindProxy<YakimaTankLife>(root, false);
+            Require(life != null && life.vehicle == vehicle && life.vehicleSync == sync && life.seat == seat && life.weapon == weapon &&
+                    vehicle.life == life && seat.life == life && weapon.life == life && sync.weapon == weapon && hitboxes.All(hitbox => hitbox.life == life),
+                "生存の状態の Udon がルートにないか、参照が欠けています。");
+            Require(life.healthBar != null && life.healthBar.parent == root.transform && life.healthBar.name == HealthBarName &&
+                    life.healthFill != null && life.healthFill.parent == life.healthBar &&
+                    life.healthBar.GetComponentsInChildren<Collider>(true).Length == 0,
+                "HP のバーがルートの下にないか、コライダーが付いています。");
+
             int walkthrough = YakimaTankSetupValidator.FindLayer(YakimaTankSetupValidator.WalkthroughLayer);
             Transform bodyCollider = root.transform.Find(CollidersName + "/" + BodyColliderName);
             Require(bodyCollider != null && bodyCollider.gameObject.layer == walkthrough && vehicle.leftWheels.Concat(vehicle.rightWheels).All(w => w.gameObject.layer == walkthrough),
@@ -1021,11 +1126,32 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 "保存した Prefab の武器の同期の Udon に砲弾の参照が入っていません。");
             Require(savedWeapon.publicVariables.TryGetVariableValue(nameof(YakimaTankWeaponSync.reloadTime), out float reload) && Mathf.Approximately(reload, settings.reloadTime),
                 "保存した Prefab の武器の同期の Udon に装填の時間が入っていません。");
+            Require(HasReference(savedWeapon, nameof(YakimaTankWeaponSync.life)) &&
+                    savedWeapon.publicVariables.TryGetVariableValue(nameof(YakimaTankWeaponSync.damage), out float damage) && Mathf.Approximately(damage, settings.damage),
+                "保存した Prefab の武器の同期の Udon に生存の状態の参照かダメージが入っていません。");
+            UdonBehaviour savedLife = SavedUdon(prefab, typeof(YakimaTankLife));
+            foreach (string name in new[]
+                     {
+                         nameof(YakimaTankLife.vehicle), nameof(YakimaTankLife.vehicleSync), nameof(YakimaTankLife.seat), nameof(YakimaTankLife.weapon),
+                         nameof(YakimaTankLife.healthBar), nameof(YakimaTankLife.healthFill)
+                     })
+            {
+                Require(HasReference(savedLife, name), $"保存した Prefab の生存の状態の Udon に {name} の参照が入っていません。");
+            }
+
+            Require(savedLife.publicVariables.TryGetVariableValue(nameof(YakimaTankLife.maxHealth), out float maxHealth) && Mathf.Approximately(maxHealth, settings.maxHealth) &&
+                    savedLife.publicVariables.TryGetVariableValue(nameof(YakimaTankLife.respawnDelay), out float respawnDelay) && Mathf.Approximately(respawnDelay, settings.respawnDelay),
+                "保存した Prefab の生存の状態の Udon に HP・復活の値が入っていません。");
+            Require(HasReference(seat, nameof(YakimaTankSeat.life)), "保存した Prefab の座席の Udon に生存の状態の参照が入っていません。");
+            Require(prefab.GetComponentsInChildren<UdonBehaviour>(true)
+                    .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankHitbox))
+                    .All(b => HasReference(b, nameof(YakimaTankHitbox.life))),
+                "保存した Prefab の命中用のトリガーの Udon に生存の状態の参照が入っていません。");
             UdonBehaviour savedSync = SavedUdon(prefab, typeof(YakimaTankVehicleSync));
             foreach (string name in new[]
                      {
                          nameof(YakimaTankVehicleSync.vehicle), nameof(YakimaTankVehicleSync.seat), nameof(YakimaTankVehicleSync.body),
-                         nameof(YakimaTankVehicleSync.bodyCollider)
+                         nameof(YakimaTankVehicleSync.bodyCollider), nameof(YakimaTankVehicleSync.weapon)
                      })
             {
                 Require(HasReference(savedSync, name), $"保存した Prefab の同期の Udon に {name} の参照が入っていません。");
@@ -1045,7 +1171,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 "保存した Prefab の乗車の判定の Udon に参照が入っていません。");
 
             UdonBehaviour udon = SavedUdon(prefab, typeof(YakimaTankVehicle));
-            Require(HasReference(udon, nameof(YakimaTankVehicle.control)) && HasReference(udon, nameof(YakimaTankVehicle.sync)), "保存した Prefab の車両の Udon に共通操作値か同期の Udon の参照が入っていません。");
+            Require(HasReference(udon, nameof(YakimaTankVehicle.control)) && HasReference(udon, nameof(YakimaTankVehicle.sync)) && HasReference(udon, nameof(YakimaTankVehicle.life)),
+                "保存した Prefab の車両の Udon に共通操作値か同期の Udon か生存の状態の参照が入っていません。");
             Require(udon.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicle.mass), out float mass) && Mathf.Approximately(mass, settings.mass),
                 "保存した Prefab の Udon に質量が入っていません。");
             Require(udon.publicVariables.TryGetVariableValue(nameof(YakimaTankVehicle.leftWheels), out WheelCollider[] left) &&

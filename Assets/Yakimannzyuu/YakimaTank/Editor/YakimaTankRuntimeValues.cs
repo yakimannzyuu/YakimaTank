@@ -70,7 +70,15 @@ namespace Yakimannzyuu.YakimaTank.Editor
             nameof(YakimaTankWeaponSync.shellSpeed),
             nameof(YakimaTankWeaponSync.shellGravity),
             nameof(YakimaTankWeaponSync.shellLifetime),
-            nameof(YakimaTankWeaponSync.reloadTime)
+            nameof(YakimaTankWeaponSync.reloadTime),
+            nameof(YakimaTankWeaponSync.damage)
+        };
+
+        /// <summary>HP・復活。生存の状態の Udon が受ける（1 発のダメージは撃つ側の武器が受ける）。</summary>
+        public static readonly IReadOnlyList<string> LifeNames = new[]
+        {
+            nameof(YakimaTankLife.maxHealth),
+            nameof(YakimaTankLife.respawnDelay)
         };
 
         /// <summary>値を受ける Udon の型と、その型が受ける名前の組。1 つの型が複数の組を受けることがある（同期の Udon は同期と接触）。</summary>
@@ -81,7 +89,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVRInput), VRInputNames),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), SyncNames),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), ContactNames),
-            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankWeaponSync), WeaponNames)
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankWeaponSync), WeaponNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankLife), LifeNames)
         };
 
         /// <summary>値を受ける Udon の型（重ならない）。</summary>

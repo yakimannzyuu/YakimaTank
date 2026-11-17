@@ -79,6 +79,9 @@ namespace Yakimannzyuu.YakimaTank
         [Header("生成で決まる値")]
         public YakimaTankVehicle vehicle;
         public YakimaTankSeat seat;
+
+        /// <summary>この車両の武器。命中の申告を受けた生存の状態が、撃った車両の武器のオーナーとダメージを一覧から引く。</summary>
+        public YakimaTankWeaponSync weapon;
         public Rigidbody body;
 
         /// <summary>接触に使う車体の箱。</summary>

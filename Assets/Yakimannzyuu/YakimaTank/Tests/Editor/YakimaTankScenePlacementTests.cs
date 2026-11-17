@@ -439,6 +439,26 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void ルートのUdonが増える前の型を記録した車両のNetworkIDも一覧の更新で外す()
+        {
+            // 0.5.0 までにビルドしたシーンでは、ルートに生存の状態の Udon がなく、UdonBehaviour が 1 つ少ない型を記録している（仕様書 0.6.0 の 1.6）。
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            GameObject vehicle = first.Instance;
+            List<string> current = NetworkIDAssignment.GetSerializedTypes(vehicle);
+            var previous = new List<string>(current);
+            Assert.That(previous.Remove(typeof(UdonBehaviour).FullName), Is.True, "今の型に UdonBehaviour がない（判定にならない）");
+            Descriptor.NetworkIDCollection = new List<NetworkIDPair>
+            {
+                new NetworkIDPair { ID = 20, gameObject = vehicle, SerializedTypeNames = previous }
+            };
+
+            YakimaTankSceneRegistry.Update(_scene);
+
+            Assert.That(Descriptor.NetworkIDCollection.Select(pair => pair.ID), Has.No.Member(20));
+            Assert.That(YakimaTankSceneRegistry.Check(_scene), Is.Empty);
+        }
+
+        [Test]
         public void 配置しても型の古い車両のNetworkIDを外す()
         {
             PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);

@@ -35,6 +35,9 @@ namespace Yakimannzyuu.YakimaTank
         public YakimaTankVehicleSync sync;
         public YakimaTankWeaponSync weapon;
 
+        /// <summary>生存の状態。破壊の間は乗れず、座っている人を降ろす。</summary>
+        public YakimaTankLife life;
+
         /// <summary>座席の位置の参照（砲塔の下。自動の位置にあり、砲塔が左右 0 度のとき向きは車体と同じ）。</summary>
         public Transform seatAnchor;
 
@@ -80,10 +83,15 @@ namespace Yakimannzyuu.YakimaTank
             return (!Utilities.IsValid(sync) || sync.isOwnerMode) && (!Utilities.IsValid(weapon) || weapon.isOwnerMode);
         }
 
-        /// <summary>乗車の判定から呼ぶ。空いていれば自分を座らせる。</summary>
+        private bool _IsDestroyed()
+        {
+            return Utilities.IsValid(life) && life._IsDestroyed();
+        }
+
+        /// <summary>乗車の判定から呼ぶ。空いていて、破壊されていなければ自分を座らせる。</summary>
         public void _RequestEnter()
         {
-            if (occupantId != NoPlayer || !Utilities.IsValid(station))
+            if (occupantId != NoPlayer || !Utilities.IsValid(station) || _IsDestroyed())
             {
                 return;
             }
@@ -175,6 +183,17 @@ namespace Yakimannzyuu.YakimaTank
             }
         }
 
+        /// <summary>生存の状態が変わったときに呼ぶ。破壊されたら、自分が座っていれば自分のクライアントで降りる。乗車の判定を直す。</summary>
+        public void _OnLifeChanged()
+        {
+            if (localSeated && _IsDestroyed())
+            {
+                _ForceExit();
+            }
+
+            _UpdateBoarding();
+        }
+
         public void _CheckOwnershipTimeout()
         {
             ownershipChecks++;
@@ -262,13 +281,16 @@ namespace Yakimannzyuu.YakimaTank
             }
         }
 
-        /// <summary>座席の出入りの通知で人が座っている間と、同期した運転手がいる間は、乗車の判定を無効にする（途中で入った人の画面も同期した運転手で無効になる）。</summary>
+        /// <summary>
+        /// 座席の出入りの通知で人が座っている間と、同期した運転手がいる間と、破壊の間は、乗車の判定を無効にする
+        /// （途中で入った人の画面も同期した運転手と生存の状態で無効になる）。
+        /// </summary>
         public void _UpdateBoarding()
         {
             if (Utilities.IsValid(boarding))
             {
                 bool driven = Utilities.IsValid(sync) && sync._HasDriver();
-                boarding._SetAvailable(occupantId == NoPlayer && !driven);
+                boarding._SetAvailable(occupantId == NoPlayer && !driven && !_IsDestroyed());
             }
         }
     }

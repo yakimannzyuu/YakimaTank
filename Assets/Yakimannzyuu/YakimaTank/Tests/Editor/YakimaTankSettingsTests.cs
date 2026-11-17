@@ -77,8 +77,70 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             "turretTurnRate", "gunTurnRate", "gunPitchMin", "gunPitchMax", "shellSpeed", "shellGravity", "shellLifetime", "reloadTime"
         };
 
+        private static readonly string[] AddedInVersion6 = { "maxHealth", "damage", "respawnDelay" };
+
         [Test]
-        public void 版4の設定を読み込むと版5に移り値と参照を保って足した砲塔と武器の項目は既定値になる()
+        public void 版5の設定を読み込むと版6に移り値と参照を保って足したHPと復活の項目は既定値になる()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model, "Version5");
+            settings.mass = 1234f;
+            settings.reloadTime = 9f;
+            settings.maxHealth = 7f;
+            settings.damage = 1f;
+            settings.respawnDelay = 60f;
+
+            YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 5, AddedInVersion6);
+
+            Assert.That(migrated.schemaVersion, Is.EqualTo(6));
+            Assert.That(migrated.mass, Is.EqualTo(1234f));
+            Assert.That(migrated.reloadTime, Is.EqualTo(9f));
+            Assert.That(migrated.barrel, Is.SameAs(_model.transform.Find(TestWorkspace.BarrelPath)));
+            Assert.That(migrated.maxHealth, Is.EqualTo(100f), "足した項目が既定値になっていない");
+            Assert.That(migrated.damage, Is.EqualTo(25f));
+            Assert.That(migrated.respawnDelay, Is.EqualTo(5f));
+            Assert.That(YakimaTankSetupValidator.Validate(migrated).Where(d => d.Severity == SetupSeverity.Error), Is.Empty);
+        }
+
+        [Test]
+        public void HPと復活の調整値の初期値は仕様の仮の値()
+        {
+            var settings = ScriptableObject.CreateInstance<YakimaTankSetupSettings>();
+            try
+            {
+                Assert.That(settings.maxHealth, Is.EqualTo(100f));
+                Assert.That(settings.damage, Is.EqualTo(25f), "4 発で破壊");
+                Assert.That(settings.respawnDelay, Is.EqualTo(5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(settings);
+            }
+        }
+
+        [TestCase(nameof(YakimaTankSetupSettings.maxHealth), 0.99f)]
+        [TestCase(nameof(YakimaTankSetupSettings.maxHealth), float.NaN)]
+        [TestCase(nameof(YakimaTankSetupSettings.damage), -0.01f)]
+        [TestCase(nameof(YakimaTankSetupSettings.damage), float.PositiveInfinity)]
+        [TestCase(nameof(YakimaTankSetupSettings.respawnDelay), -0.01f)]
+        public void HPと復活の調整値が範囲外ならErrorになる(string field, float value)
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            typeof(YakimaTankSetupSettings).GetField(field).SetValue(settings, value);
+            Assert.That(YakimaTankSetupValidator.Validate(settings).Any(d => d.Severity == SetupSeverity.Error && d.Field == field), Is.True);
+        }
+
+        [Test]
+        public void HPと復活の調整値は範囲の端なら通る()
+        {
+            YakimaTankSetupSettings settings = _workspace.CreateSettings(_model);
+            settings.maxHealth = 1f;
+            settings.damage = 0f;
+            settings.respawnDelay = 0f;
+            Assert.That(YakimaTankSetupValidator.Validate(settings).Where(d => d.Severity == SetupSeverity.Error), Is.Empty);
+        }
+
+        [Test]
+        public void 版4の設定を読み込むと今の版に移り値と参照を保って足した砲塔と武器の項目は既定値になる()
         {
             YakimaTankSetupSettings settings = _workspace.CreateSettings(_model, "Version4");
             settings.mass = 1234f;
@@ -88,7 +150,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
 
             YakimaTankSetupSettings migrated = ReloadAsVersion(settings, 4, AddedInVersion5);
 
-            Assert.That(migrated.schemaVersion, Is.EqualTo(5));
+            Assert.That(migrated.schemaVersion, Is.EqualTo(YakimaTankSetupSettings.CurrentSchemaVersion));
             Assert.That(migrated.mass, Is.EqualTo(1234f));
             Assert.That(migrated.contactMaxPushAcceleration, Is.EqualTo(3f));
             Assert.That(migrated.barrel, Is.SameAs(_model.transform.Find(TestWorkspace.BarrelPath)));

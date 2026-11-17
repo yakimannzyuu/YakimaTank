@@ -19,7 +19,15 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private static readonly string[] VRInputFieldNames = YakimaTankRuntimeValues.VRInputNames.ToArray();
         private static readonly string[] SyncFieldNames = YakimaTankRuntimeValues.SyncNames.ToArray();
         private static readonly string[] ContactFieldNames = YakimaTankRuntimeValues.ContactNames.ToArray();
-        private static readonly string[] WeaponFieldNames = YakimaTankRuntimeValues.WeaponNames.ToArray();
+        // 1 発のダメージは武器の Udon が受けるが、ウィンドウでは「HP・復活」に並べる（仕様書 0.6.0 の 1.5）。
+        private static readonly string[] WeaponFieldNames = YakimaTankRuntimeValues.WeaponNames.Where(name => name != nameof(YakimaTankSetupSettings.damage)).ToArray();
+
+        private static readonly string[] LifeFieldNames =
+        {
+            nameof(YakimaTankSetupSettings.maxHealth),
+            nameof(YakimaTankSetupSettings.damage),
+            nameof(YakimaTankSetupSettings.respawnDelay)
+        };
 
         private static readonly string[] SuspensionFieldNames =
         {
@@ -58,7 +66,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
-            EditorGUILayout.HelpBox("未実装：命中のダメージ・HP・破壊・復活、発射の閃光と音。いまできるのは、乗って走り、砲塔を回して撃ち（自分の砲弾が当たった車両が分かるまで）、ほかの人の画面に同期し、車両同士がぶつかって止まることまで。", MessageType.Info);
+            EditorGUILayout.HelpBox("未実装：発射の閃光と音、破壊の見た目。いまできるのは、乗って走り、砲塔を回して撃ち、当たると相手の HP が減り、0 で破壊されて一定の時間の後に最初の位置で復活し、ほかの人の画面に同期し、車両同士がぶつかって止まることまで。", MessageType.Info);
             settings = (YakimaTankSetupSettings)EditorGUILayout.ObjectField("設定アセット", settings, typeof(YakimaTankSetupSettings), false);
             if (settings == null)
             {
@@ -163,6 +171,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Section("同期（Play 中に再適用できる）", SyncFieldNames);
             Section("接触（Play 中に再適用できる）", ContactFieldNames);
             Section("砲塔・武器（Play 中に再適用できる）", WeaponFieldNames);
+            Section("HP・復活（Play 中に再適用できる）", LifeFieldNames);
         }
 
         private Transform TransformPopup(string label, Transform current, Transform[] nodes, string[] paths, bool allowNone)
