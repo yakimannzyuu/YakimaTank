@@ -27,7 +27,7 @@ flowchart TB
   top -.参照.-> controls
 ```
 
-- 車両の Udon は、ルートの Rigidbody・左右の WheelCollider・共通操作値・同期の Udon を参照する。座席は、乗車の判定・入力・共通操作値・車両・同期の Udon を参照する。同期の Udon は、車両・座席・Rigidbody と、物理の形（車体のコライダーと全部の WheelCollider）を参照する。参照は Prefab の中で閉じる。
+- 車両の Udon は、ルートの Rigidbody・左右の WheelCollider・共通操作値・同期の Udon を参照する。座席は、乗車の判定・入力・共通操作値・車両・同期の Udon を参照する。同期の Udon は、車両・座席・Rigidbody と、物理の形（車体のコライダーと全部の WheelCollider）と、接触に使う車体のコライダー（BoxCollider）を参照する。参照は Prefab の中で閉じる。
 - ルートの車両の Udon と同期の Udon は、どちらも Manual（同じ GameObject で同期の方式を混ぜない）。座席は別の GameObject。
 - 元のモデルは入れ子の Prefab のまま置き、モデルのルートの回転（FBX の軸の変換など）を保って、向きの補正を上から掛ける。元のモデルのトリガーでないコライダーは、Prefab の中で無効にする（元のアセットは変えない）。
 - 座席は砲塔の子（砲塔の対応がなければ車体の子）。向きは車体にそろえ、砲塔の範囲の上面の中央に、設定のずらしを足した所に置く。

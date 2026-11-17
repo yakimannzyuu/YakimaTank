@@ -1,7 +1,7 @@
 {
   "name": "com.yakimannzyuu.yakimatank",
   "displayName": "YakimaTank",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "unity": "2022.3",
   "description": "VRChat 向け戦車用 Udon ギミック",
   "author": { "name": "Yakimannzyuu", "url": "https://github.com/yakimannzyuu" },
