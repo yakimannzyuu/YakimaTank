@@ -30,7 +30,7 @@ flowchart LR
 
 ### 実行中の部品
 
-乗車と入力は、生成 Prefab の中の Udon で閉じる。入力の方法と車両の動きは、共通操作値で分ける。運転手が車両のオーナーになり、オーナーだけが物理を計算して、車体の状態を同期の Udon で送る（ADR 0009）。
+乗車と入力は、生成 Prefab の中の Udon で閉じる。入力の方法と車両の動きは、共通操作値で分ける。運転手が車両（車体と武器）のオーナーになり、オーナーだけが物理を計算して、車体の状態を同期の Udon で、砲塔と発射を武器の同期の Udon で送る（ADR 0009）。
 
 ```mermaid
 flowchart LR
@@ -47,6 +47,10 @@ flowchart LR
   sync --> net[VRChat の同期<br/>Manual]
   net --> remote[ほかの人の画面<br/>補間して置く]
   registry[(シーンの車両の一覧)] --> sync
+  control --> weapon[武器の同期<br/>Weapon・Manual]
+  weapon --> shell[砲弾<br/>同期しない]
+  shell --> hitbox[命中用のトリガー<br/>ほかの車両]
+  weapon --> net
   control --> panel[デバッグ UI<br/>別 Prefab]
   sync --> panel
 ```
@@ -56,6 +60,8 @@ flowchart LR
 - 車両同士の通常の物理の当たりは外す（オーナー以外の画面では相手の物理の形が無効、同じ人が持つ車両同士はシーンの車両の一覧から `Physics.IgnoreCollision`）。その上で、各オーナーが物理の更新の最初に、自分の車両の速度だけを直す（簡易衝突。ADR 0009）。相手の車両も位置も直接は動かさず、接触のための同期変数やイベントはない。
 - 接触に使う相手の姿勢は、自分が持つ車両なら Rigidbody の今の値、ほかの人の車両なら最新の有効な状態を今の時刻まで進めた値（表示の補間とは別）。止まった印のない状態が 1 秒より古ければ、その相手とは計算しない。重なりは、水平面での車体の箱どうしの重なり（静的な関数）。
 - 押されている車両は、押す加速がブレーキの減速より大きい間だけ、車輪の張り付きを外し（ブレーキを外して、わずかな駆動のトルク）、ブレーキの減速を速度に掛ける。WheelCollider は、駆動していない車輪を低速でその場に張り付かせるため。
+- 座席はルートの下で、砲塔の下の位置の参照に位置だけ付いて行く（座った人は砲塔と一緒に回らない）。座ると車体と武器の両方の所有権を取り、両方そろってから入力を有効にする。
+- 武器は、Desktop は頭の向き（車体から見た角度）へ、VR は右手の量で砲塔と砲身を回す。装填して撃つと、発射の番号を進め、砲口の位置と向きをすぐに送る。ほかの人の画面は、最新の角度へ回る速さで寄せ、番号が変わったら見た目の砲弾を出す（欠けとずれは許す）。命中を数えるのは撃った人の画面の砲弾だけ（0.5.0 は当たった車両の番号の記録まで）。
 - 車体のコライダーと WheelCollider は `Walkthrough` レイヤーで、プレイヤーと当たらない。元のモデルのトリガーでないコライダーは、生成 Prefab の中で無効にする。
 
 ## 主要な流れ
@@ -156,6 +162,32 @@ sequenceDiagram
 - 自分が寄る分だけを自分で消し、相手が寄って来る分は深さに比例した上限つきの加速だけで受ける。遅れて届いた相手の速度を写すと、反動が遅れの分だけ増えるため。
 - 押し返しは両方の車両に同じ深さから掛かるので、戦車どうしで押せるのは、押す側の駆動の加速が押される側のブレーキの減速より大きいときだけ（既定値では押せない）。
 
+### 狙って撃つ
+
+```mermaid
+sequenceDiagram
+  actor A as 乗る人 A
+  participant S as 座席
+  participant W as 武器の同期（A）
+  participant N as VRChat
+  participant B as 武器の同期（B の画面）
+  A->>S: 座る
+  S->>N: SetOwner（ルート）・SetOwner（Weapon）
+  N-->>S: 両方の OnOwnershipTransferred
+  S->>W: 入力を有効にする（Desktop は目標の角度、VR は速さ）
+  loop 狙っている間
+    W->>N: 角度（送る間隔ごと）
+    N-->>B: 最新の角度へ回る速さで寄せる
+  end
+  A->>W: 射撃（装填済み）
+  W->>W: 番号を進め、砲口を書き、自分の砲弾を出す
+  W->>N: すぐに送る
+  N-->>B: 番号が変わったら見た目の砲弾
+  W->>W: 自分の砲弾がほかの車両の命中用のトリガーに当たる → 車両の番号を記録
+```
+
+- 発射の番号は、受けた番号と自分がその武器で前に撃った最後の番号の大きい方から続ける。「撃った人のプレイヤー ID と番号」で命中を見分ける（重複の判定は 0.6.0）。
+
 ### 連携でのコンパイルからテストまで
 
 ```mermaid
@@ -184,9 +216,12 @@ sequenceDiagram
 |---|---|---|
 | `YakimaTankVehicle` | Runtime | 走行・制動・旋回・再適用。自分が座っている間は共通操作値から走る（UdonSharp）。オーナーの画面でだけ物理を計算する。物理の更新の最初に接触の速度の変化を足し、押されている間は車輪の張り付きを外す（判定は静的な関数） |
 | `YakimaTankVehicleSync` | Runtime | 車体の同期（ルート、Manual）。所有権の切り替え、送る状態の採取と送る間隔、受けた状態の確かめ・保留・履歴・補間・先読み、物理の形の有効・無効、同じ人の車両同士の通常の当たりを外す。車両同士の簡易衝突（接触用の姿勢・水平面の重なり・速度の変化）。計算は静的な関数 |
-| `YakimaTankVehicleRegistry` | Runtime | シーンの車両の一覧（同期しない）。始まるときに各車両へ自分を知らせる |
+| `YakimaTankVehicleRegistry` | Runtime | シーンの車両の一覧（同期しない）。始まるときに各車両へ自分と一覧の中の番号を知らせる |
+| `YakimaTankWeaponSync` | Runtime | 武器の同期（`Weapon`、Manual）。所有権、砲塔と砲身の角度、装填と発射、送る・受ける（受けた状態の確かめ）、見た目の砲弾、命中の記録。計算は静的な関数 |
+| `YakimaTankShell` | Runtime | 砲弾 1 つ（同期しない。使い回す）。弾速と重力で進み、光線で当たりを見る。撃った人のものだけが命中を数える |
+| `YakimaTankHitbox` | Runtime | 命中用のトリガー（車体と砲塔）。当たった車両（車体の同期の Udon）を知らせる |
 | `YakimaTankControlState` | Runtime | 共通操作値（ハンドル・アクセル・ギアなど）。入力が書き、車両とデバッグ UI が読む |
-| `YakimaTankSeat` | Runtime | 座席（VRCStation と同じ GameObject）。出入りで乗車の判定と入力を切り替え、降りたら初期値に戻す。座ったら所有権を取り、来たら入力を有効にする。降りる入力（今はジャンプ）を受けて降ろす（VRCStation の標準の降り方は止める） |
+| `YakimaTankSeat` | Runtime | 座席（VRCStation と同じ GameObject。ルートの下で、砲塔の下の位置の参照に位置だけ付いて行く）。出入りで乗車の判定と入力を切り替え、降りたら初期値に戻す。座ったら車体と武器の所有権を取り、両方来たら入力を有効にする。降りる入力（今はジャンプ）を受けて降ろす（VRCStation の標準の降り方は止める） |
 | `YakimaTankBoarding` | Runtime | 乗車の判定の Interact |
 | `YakimaTankDesktopInput` | Runtime | Desktop の入力（W・S・A・D、視点、左クリック）。変換は静的な関数 |
 | `YakimaTankVRInput` | Runtime | VR の入力（左手で走行、右手で砲と射撃）。変換は静的な関数 |
@@ -194,20 +229,20 @@ sequenceDiagram
 | `YakimaTankSetupSettings` | Editor | 設定アセット（正本）。読み込むときに今の版へ移す |
 | `YakimaTankSetupValidator` | Editor | 設定の検証（Error・Warning）。`Walkthrough` レイヤー・砲塔・元のモデルのコライダー・砲塔と砲身を除いた車体のメッシュも見る |
 | `YakimaTankSettingsWriter` | Editor | 階層パスで設定を書く。解決できなければ何も書かない |
-| `YakimaTankSetupService` | Editor | 生成（座席・乗車の判定・入力・レイヤーを含む）。ウィンドウと連携が共用する |
+| `YakimaTankSetupService` | Editor | 生成（座席・乗車の判定・入力・レイヤー・武器・砲弾・命中用のトリガー・砲口を含む）。ウィンドウと連携が共用する。砲口は砲身の下の印（名前に Muzzle）か砲身のメッシュの前の端 |
 | `YakimaTankScenePlacement` | Editor | シーンへの配置。車両は生成 Prefab のインスタンスで見分け、その車両を指すデバッグ UI を 1 枚まで許す。ほかの手の変更があれば変えずに止める（UdonSharp が書く上書きは除く）。配置のたびにシーンの車両の一覧を作り直す |
 | `YakimaTankSceneRegistry` | Editor | シーンの車両の一覧を作り直す・実際の車両と合っているかを確かめる。車両の中を指す型の古い Network ID（0.2.0 でビルドしたシーン）を外す。VRChat SDK のビルドの前に、古い ID を外してから確かめ、一覧が合わなければ止める（`YakimaTankRegistryBuildCheck`） |
 | `YakimaTankDebugPanelPlacement` | Editor | 入れ物にデバッグ UI を 1 枚置く（開発ワールドの更新が配置の後に呼ぶ） |
 | `YakimaTankDebugPanelBuilder` | Editor | パッケージのデバッグ UI の Prefab を作る（作り直すときも使う） |
 | `YakimaTankPlayTuning` | Editor | Play 中の再適用・出し直し・作業値の保存。車両・座席・VR の入力に書く。出し直したら、前の車両を表示していたデバッグ UI を新しい車両につなぎ直す |
 | `YakimaTankWorkingValues` | Editor | Play 中の作業値。作った元の設定と組にし、設定が替われば作り直す |
-| `YakimaTankRuntimeValues` | Editor | 設定と、値を受ける Udon（車両・座席・VR の入力・同期と接触）で同じ名前の値 |
+| `YakimaTankRuntimeValues` | Editor | 設定と、値を受ける Udon（車両・座席・VR の入力・同期と接触・武器）で同じ名前の値 |
 | `YakimaTankModelPaths` | Editor | モデルの中の階層パス（同じ名前の兄弟は番号つき。名前の中の `\` `/` `[` `]` はエスケープ） |
 | `YakimaTankBounds` | Editor | メッシュの範囲（SkinnedMeshRenderer はルートのボーンの座標）。車体・砲塔自身にメッシュがなければ、子から砲塔・砲身の階層を除いて求める |
 | `YakimaTankSetupMath` | Editor | 転輪の半径・位置、サスペンションの自動の値 |
 | `YakimaTankModelInspector` | Editor | モデルを読むだけで、階層・範囲・軸・名前からの候補を返す（連携の `inspect-model`） |
 | `TestWorkspace` | Tests/Editor | テストの一時フォルダと、立方体と円柱のモデル |
-| `YakimaTankDriveTestBase` | Tests/Runtime | 走行・乗降・同期・接触の判定（PlayMode・ClientSim）。生成物ごとに派生させる。乗降と同期のテストと、ほかの人の車両との接触のテストだけ ClientSim を始める。受ける状態は `_AcceptState` に直接入れ、送る要求にはテストが OnPreSerialization・OnPostSerialization で応える |
+| `YakimaTankDriveTestBase` | Tests/Runtime | 走行・乗降・同期・接触・武器の判定（PlayMode・ClientSim）。生成物ごとに派生させる。乗降と同期のテストと、ほかの人の車両との接触のテストだけ ClientSim を始める。受ける状態は `_AcceptState` に直接入れ、送る要求にはテストが OnPreSerialization・OnPostSerialization で応える |
 
 ## これからの設計
 
