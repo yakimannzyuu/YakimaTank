@@ -120,11 +120,18 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         public IEnumerator RestoreTimingAfterSession()
         {
             RestoreTiming();
+            // 止めてから待つ。動いたままだと、待っている間にも新しい要求が積まれる。
             if (_vehicleRoot != null)
             {
-                // 止めてから待つ。動いたままだと、待っている間にも新しい要求が積まれる。
                 _vehicleRoot.SetActive(false);
             }
+
+            if (_other != null)
+            {
+                _other.SetActive(false);
+            }
+
+            _other = null;
 
             float start = Time.realtimeSinceStartup;
             while (Time.realtimeSinceStartup - start < 0.2f)

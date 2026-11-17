@@ -18,6 +18,12 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>これより速く逆へ動いている間は、入力の向きに駆動せずに止める。</summary>
         private const float OpposingSpeed = 0.5f;
 
+        /// <summary>
+        /// 押されている間、車輪の張り付きを外すために掛ける、転輪 1 つあたりの駆動のトルク（N·m）。
+        /// 車体を動かす力にはならない大きさ。張り付きは、駆動のトルクが 0 でなければ外れる（0.4.0 の実装の最初の確かめ）。
+        /// </summary>
+        public const float ReleaseTorque = 1f;
+
         [Header("走行（Play 中に再適用できる）")]
         public float mass = 20000f;
         public float driveTorque = 12000f;
@@ -62,6 +68,9 @@ namespace Yakimannzyuu.YakimaTank
         public bool hasSpawnPose;
         public Vector3 spawnPosition;
         public Quaternion spawnRotation;
+
+        /// <summary>転輪の半径の平均（m）。押されている間のブレーキの減速を求める。</summary>
+        public float wheelRadius;
 
         private void Start()
         {
@@ -142,6 +151,7 @@ namespace Yakimannzyuu.YakimaTank
 
             body.mass = mass;
             body.centerOfMass = baseCenterOfMass + centerOfMassOffset;
+            wheelRadius = (_SumRadius(leftWheels) + _SumRadius(rightWheels)) / (leftWheels.Length + rightWheels.Length);
             _ReleaseWheels(leftWheels);
             _ReleaseWheels(rightWheels);
             isReady = true;
@@ -169,9 +179,11 @@ namespace Yakimannzyuu.YakimaTank
 
             // 車両同士の接触は速度だけを直す。走行は角速度と転輪のトルクを書くので上書きし合わない。
             // 接地していないと下で抜けるので、その前に足す。
+            Vector3 push = Vector3.zero;
             if (Utilities.IsValid(sync))
             {
                 body.velocity = body.velocity + sync._ContactVelocityChange();
+                push = sync.contactPush;
             }
 
             if (localDriverSeated && Utilities.IsValid(control))
@@ -180,10 +192,23 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             Transform bodyTransform = body.transform;
-            float forwardSpeed = Vector3.Dot(body.velocity, bodyTransform.forward);
+            Vector3 forward = bodyTransform.forward;
+            float forwardSpeed = Vector3.Dot(body.velocity, forward);
             int wheelCount = leftWheels.Length + rightWheels.Length;
             float motor = CalculateDriveTorque(throttleInput, forwardSpeed, driveTorque, maxForwardSpeed, maxReverseSpeed) / wheelCount;
-            float brake = CalculateBrakeTorque(throttleInput, steerInput, brakeInput, forwardSpeed, brakeTorque, idleBrakeTorque) / wheelCount;
+            float brakeTotal = CalculateBrakeTorque(throttleInput, steerInput, brakeInput, forwardSpeed, brakeTorque, idleBrakeTorque);
+            float brake = brakeTotal / wheelCount;
+            float pushAlong = Vector3.Dot(push, forward);
+            float deceleration = BrakeDeceleration(brakeTotal, wheelRadius, body.mass);
+            if (ReleasesForPush(pushAlong, deceleration, motor != 0f))
+            {
+                // 押されている間は、ブレーキを外し、わずかな駆動のトルクで車輪の張り付きを外して、ブレーキの減速を速度で掛ける。
+                // 押す加速の上限を上げてはがす案は採らない。張り付きは 1 ステップの速度の変化が大きいときだけはがれ、はがれると抵抗がなく飛ぶ。
+                motor = pushAlong > 0f ? ReleaseTorque : -ReleaseTorque;
+                brake = 0f;
+                body.velocity = body.velocity + forward * (ApplyBrake(forwardSpeed, deceleration, Time.fixedDeltaTime) - forwardSpeed);
+            }
+
             bool leftGrounded = _DriveWheels(leftWheels, motor, brake);
             bool rightGrounded = _DriveWheels(rightWheels, motor, brake);
             if (!leftGrounded && !rightGrounded)
@@ -264,6 +289,28 @@ namespace Yakimannzyuu.YakimaTank
             return Mathf.MoveTowards(currentYawRate, target, turnAcceleration * deltaTime);
         }
 
+        /// <summary>ブレーキのトルク（全部の転輪の合計）で止める減速（m/s²）。</summary>
+        public static float BrakeDeceleration(float brakeTorque, float wheelRadius, float mass)
+        {
+            return wheelRadius > 0f && mass > 0f ? brakeTorque / wheelRadius / mass : 0f;
+        }
+
+        /// <summary>
+        /// 車両同士の接触で押されている間、車輪の張り付きを外すか（仕様書 0.4.0 の 1.5）。
+        /// 駆動していない車輪は、低速でブレーキのトルクに関係なくその場に張り付く（WheelCollider）。押す加速の前後の分が、
+        /// ブレーキの減速を超えている間だけ外す。横はタイヤの横の摩擦で受けるので見ない。
+        /// </summary>
+        public static bool ReleasesForPush(float pushAlong, float brakeDeceleration, bool driven)
+        {
+            return !driven && Mathf.Abs(pushAlong) > brakeDeceleration;
+        }
+
+        /// <summary>張り付きを外している間の、ブレーキの代わりの減速。</summary>
+        public static float ApplyBrake(float speedAlong, float deceleration, float deltaTime)
+        {
+            return Mathf.MoveTowards(speedAlong, 0f, deceleration * deltaTime);
+        }
+
         private bool _DriveWheels(WheelCollider[] wheels, float motor, float brake)
         {
             bool grounded = false;
@@ -279,6 +326,17 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             return grounded;
+        }
+
+        private float _SumRadius(WheelCollider[] wheels)
+        {
+            float sum = 0f;
+            for (int index = 0; index < wheels.Length; index++)
+            {
+                sum += wheels[index].radius;
+            }
+
+            return sum;
         }
 
         /// <summary>設定の検証に失敗したときも呼ぶので、足りない参照は飛ばして、外せる転輪だけ外す。</summary>

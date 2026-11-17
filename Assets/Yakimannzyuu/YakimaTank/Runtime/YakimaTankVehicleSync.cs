@@ -114,6 +114,9 @@ namespace Yakimannzyuu.YakimaTank
         public int contactCount;
         public int contactCutoffCount;
 
+        /// <summary>直前の物理の更新で押し返された加速（上限で切った後、m/s²）。車両が、押されている間に車輪の張り付きを外すのに読む。</summary>
+        public Vector3 contactPush;
+
         [Header("接触用の姿勢（実行中に変わる。相手が読む）")]
         public Vector3 contactBoxCenter;
         public Quaternion contactBoxRotation = Quaternion.identity;
@@ -378,6 +381,7 @@ namespace Yakimannzyuu.YakimaTank
             isOwnerMode = false;
             contactCount = 0;
             contactCutoffCount = 0;
+            contactPush = Vector3.zero;
             _pendingSend = false;
             _awaitingSerialization = false;
             if (Utilities.IsValid(vehicle))
@@ -778,6 +782,7 @@ namespace Yakimannzyuu.YakimaTank
         {
             contactCount = 0;
             contactCutoffCount = 0;
+            contactPush = Vector3.zero;
             if (!isOwnerMode || !Utilities.IsValid(registry) || registry.vehicles == null)
             {
                 return Vector3.zero;
@@ -834,6 +839,7 @@ namespace Yakimannzyuu.YakimaTank
                 push += ContactPush(normal, depth, contactPushStrength, contactMaxPushAcceleration);
             }
 
+            contactPush = Vector3.ClampMagnitude(push, contactMaxPushAcceleration);
             return ContactTotalChange(stop, push, contactMaxPushAcceleration, deltaTime);
         }
 

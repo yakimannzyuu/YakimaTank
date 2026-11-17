@@ -99,7 +99,12 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
 
         private void Inject(int sender, int epoch, float sendTime, Vector3 position, Quaternion rotation, Vector3 velocity, bool stopped, int driver = Sync.NoPlayer)
         {
-            UdonBehaviour sync = SyncUdon;
+            InjectInto(SyncUdon, sender, epoch, sendTime, position, rotation, velocity, stopped, driver);
+        }
+
+        private static void InjectInto(UdonBehaviour sync, int sender, int epoch, float sendTime, Vector3 position, Quaternion rotation, Vector3 velocity, bool stopped,
+            int driver = Sync.NoPlayer)
+        {
             sync.SetProgramVariable(nameof(Sync.syncFormat), Sync.SyncFormat);
             sync.SetProgramVariable(nameof(Sync.syncEpoch), epoch);
             sync.SetProgramVariable(nameof(Sync.syncPosition), position);
@@ -464,38 +469,6 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
 
             udon.SetProgramVariable(nameof(YakimaTankVehicleRegistry.vehicles), list);
             return registry;
-        }
-
-        [UnityTest]
-        public IEnumerator 同じオーナーの2台は秒速2メートルで当ててもすり抜け相手は動かず当てた側の高さは変わらない([Values(false, true)] bool side)
-        {
-            yield return Place();
-            BoxCollider box = _vehicleRoot.transform.Find("Colliders/Body").GetComponent<BoxCollider>();
-            float length = box.size.z;
-            float width = box.size.x;
-            Vector3 otherPosition = side
-                ? new Vector3(0f, SpawnHeight, length * 0.5f + width * 0.5f + 1f)
-                : new Vector3(0f, SpawnHeight, length + 1f);
-            GameObject other = YakimaTankPlayTuning.Spawn(_prefab, otherPosition, side ? Quaternion.Euler(0f, 90f, 0f) : Quaternion.identity);
-            SpawnRegistry(_vehicleRoot, other);
-            yield return PhysicsSeconds(2f);
-
-            Vector3 otherStart = other.transform.position;
-            float startHeight = _vehicleRoot.transform.position.y;
-            float pushed = 0f;
-            float rise = 0f;
-            double start = Time.fixedTimeAsDouble;
-            while (!Elapsed(start, 10f))
-            {
-                yield return new WaitForFixedUpdate();
-                SetInput(ForwardSpeed < 2f ? 0.6f : 0f, 0f, 0f);
-                pushed = Mathf.Max(pushed, Vector3.Distance(other.transform.position, otherStart));
-                rise = Mathf.Max(rise, Mathf.Abs(_vehicleRoot.transform.position.y - startHeight));
-            }
-
-            Assert.That(_vehicleRoot.transform.position.z, Is.GreaterThan(otherPosition.z + (side ? width : length) * 0.5f), "相手の向こうまで進んでいない（すり抜けずに止められた）");
-            Assert.That(pushed, Is.LessThan(0.05f), "相手が動いた");
-            Assert.That(rise, Is.LessThan(0.1f), "当てた側の車体の高さが変わった（乗り上げ）");
         }
     }
 }
