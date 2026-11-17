@@ -81,9 +81,9 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         private static bool Valid(byte format = Weapon.SyncFormat, float yaw = 30f, float pitch = 5f, Vector3? position = null, Vector3? direction = null,
-            float sendTime = 10f, float lastUsed = 9f)
+            float sendTime = 10f, float lastUsed = 9f, int fireNumber = 4)
         {
-            return Weapon.IsValidState(format, yaw, pitch, position ?? new Vector3(1f, 2f, 3f), direction ?? Vector3.forward, sendTime, lastUsed, PitchMin, PitchMax);
+            return Weapon.IsValidState(format, yaw, pitch, fireNumber, position ?? new Vector3(1f, 2f, 3f), direction ?? Vector3.forward, sendTime, lastUsed, PitchMin, PitchMax);
         }
 
         [Test]
@@ -101,6 +101,8 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(Valid(direction: new Vector3(0f, 0f, 2f)), Is.False, "向きの大きさ");
             Assert.That(Valid(sendTime: 9f, lastUsed: 9f), Is.False, "同じ時刻");
             Assert.That(Valid(sendTime: 8f, lastUsed: 9f), Is.False, "古い時刻");
+            Assert.That(Valid(fireNumber: -1), Is.False, "負の発射の番号");
+            Assert.That(Valid(fireNumber: 0), Is.True, "まだ撃っていない");
         }
 
         [Test]

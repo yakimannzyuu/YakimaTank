@@ -91,6 +91,15 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void 砲弾の数は寿命を装填の時間で割った切り上げに1を足した数で2つ以上()
+        {
+            Assert.That(YakimaTankSetupMath.ShellCount(3f, 3f), Is.EqualTo(2), "既定値：飛ぶのは 1 発");
+            Assert.That(YakimaTankSetupMath.ShellCount(3f, 1f), Is.EqualTo(4));
+            Assert.That(YakimaTankSetupMath.ShellCount(3f, 0.7f), Is.EqualTo(6), "切り上げ");
+            Assert.That(YakimaTankSetupMath.ShellCount(1f, 5f), Is.EqualTo(2), "少なくとも 2 つ");
+        }
+
+        [Test]
         public void 砲塔にメッシュがないときの命中用のトリガーは前後と左右が車体のコライダーで上端がモデル全体の上端()
         {
             var body = new Bounds(new Vector3(0f, 0.85f, 0f), new Vector3(2f, 0.9f, 4f));

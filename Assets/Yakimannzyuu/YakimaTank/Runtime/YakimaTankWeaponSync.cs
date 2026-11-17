@@ -262,6 +262,8 @@ namespace Yakimannzyuu.YakimaTank
 
             if (hasControl && ShouldFire(loaded, control.fire, armed))
             {
+                // その回の角度を当ててから砲口を読む。当てる前だと、1 フレーム前の向きと位置で撃つ。
+                _ApplyAngles();
                 _Fire();
             }
 
@@ -299,8 +301,20 @@ namespace Yakimannzyuu.YakimaTank
                 return;
             }
 
-            YakimaTankShell shell = shells[_nextShell];
-            _nextShell = (_nextShell + 1) % shells.Length;
+            // 空いている砲弾を順に探す。空きがなければ（Play 中に装填の時間を短くしたときなど）、一番前に撃った砲弾を使い回す。
+            int chosen = _nextShell;
+            for (int offset = 0; offset < shells.Length; offset++)
+            {
+                int index = (_nextShell + offset) % shells.Length;
+                if (Utilities.IsValid(shells[index]) && !shells[index].active)
+                {
+                    chosen = index;
+                    break;
+                }
+            }
+
+            _nextShell = (chosen + 1) % shells.Length;
+            YakimaTankShell shell = shells[chosen];
             if (Utilities.IsValid(shell))
             {
                 shell._Launch(position, direction * shellSpeed, counting);
@@ -367,7 +381,7 @@ namespace Yakimannzyuu.YakimaTank
                 _BecomeRemote();
             }
 
-            if (!IsValidState(syncFormat, syncYaw, syncPitch, syncFirePosition, syncFireDirection, incomingSendTime, _lastUsedTime, gunPitchMin, gunPitchMax))
+            if (!IsValidState(syncFormat, syncYaw, syncPitch, syncFireNumber, syncFirePosition, syncFireDirection, incomingSendTime, _lastUsedTime, gunPitchMin, gunPitchMax))
             {
                 rejectedCount++;
                 return;
@@ -457,7 +471,7 @@ namespace Yakimannzyuu.YakimaTank
         }
 
         /// <summary>受けた状態を使うか（オーナー以外から届いた値は確かめてから使う）。比べ方を「範囲の内なら通す」にして、NaN と無限大を同じ所で弾く。</summary>
-        public static bool IsValidState(byte format, float yaw, float pitch, Vector3 firePosition, Vector3 fireDirection, float sendTime, float lastUsedTime,
+        public static bool IsValidState(byte format, float yaw, float pitch, int fireNumber, Vector3 firePosition, Vector3 fireDirection, float sendTime, float lastUsedTime,
             float pitchMin, float pitchMax)
         {
             return format == SyncFormat
@@ -467,6 +481,7 @@ namespace Yakimannzyuu.YakimaTank
                    && Mathf.Abs(firePosition.y) <= YakimaTankVehicleSync.MaxPosition
                    && Mathf.Abs(firePosition.z) <= YakimaTankVehicleSync.MaxPosition
                    && fireDirection.magnitude <= 1f + YakimaTankVehicleSync.RotationTolerance
+                   && fireNumber >= 0
                    && sendTime > lastUsedTime;
         }
 

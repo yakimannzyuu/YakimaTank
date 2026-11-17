@@ -291,7 +291,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             UdonBehaviour[] shells = prefab.GetComponentsInChildren<UdonBehaviour>(true)
                 .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankShell)).ToArray();
 
-            Assert.That(shells, Has.Length.EqualTo(YakimaTankSetupService.ShellCount));
+            Assert.That(shells, Has.Length.EqualTo(YakimaTankSetupMath.ShellCount(_settings.shellLifetime, _settings.reloadTime)));
             string material = System.IO.Path.GetDirectoryName(_settings.outputPrefabPath)?.Replace('\\', '/') + "/" + YakimaTankSetupService.ShellMaterialName;
             foreach (UdonBehaviour shell in shells)
             {
@@ -334,6 +334,42 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(bounds.min.y, Is.EqualTo(body.center.y - body.size.y * 0.5f).Within(1e-3f));
             Assert.That(bounds.max.y, Is.EqualTo(TestWorkspace.TurretTop).Within(1e-3f), "モデルの上端まで");
             Assert.That(area.isTrigger, Is.True);
+        }
+
+        [Test]
+        public void 砲弾の数は寿命と装填の時間から決まり生成し直すと足し引きする()
+        {
+            _settings.reloadTime = 1f;
+            GameObject first = GenerateOrFail();
+            Assert.That(Shells(first), Is.EqualTo(4));
+
+            _settings.reloadTime = 3f;
+            GameObject second = GenerateOrFail();
+            Assert.That(Shells(second), Is.EqualTo(2), "余った砲弾が残っている");
+            Assert.That(second.transform.Find(YakimaTankSetupService.WeaponName + "/" + YakimaTankSetupService.ShellsName).childCount, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void 前の生成の名前の違う命中用のトリガーと位置の参照は生成し直すと残さない()
+        {
+            GenerateOrFail();
+            GameObject contents = PrefabUtility.LoadPrefabContents(_settings.outputPrefabPath);
+            Transform turret = contents.transform.Find(YakimaTankSetupService.ModelName + "/" + TestWorkspace.TurretPath);
+            turret.Find(YakimaTankSetupService.TurretHitboxName).name = "TurretHitbox";
+            turret.Find(YakimaTankSetupService.SeatAnchorName).name = "SeatAnchor";
+            PrefabUtility.SaveAsPrefabAsset(contents, _settings.outputPrefabPath);
+            PrefabUtility.UnloadPrefabContents(contents);
+
+            GameObject prefab = GenerateOrFail();
+
+            Assert.That(prefab.GetComponentsInChildren<UdonBehaviour>(true).Count(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankHitbox)), Is.EqualTo(2));
+            Assert.That(Turret(prefab).Find("TurretHitbox"), Is.Null, "前の名前の命中用のトリガーが残った");
+            Assert.That(Turret(prefab).Find("SeatAnchor"), Is.Null, "前の名前の位置の参照が残った");
+        }
+
+        private static int Shells(GameObject prefab)
+        {
+            return prefab.GetComponentsInChildren<UdonBehaviour>(true).Count(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankShell));
         }
 
         [Test]
@@ -523,7 +559,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                     typeof(YakimaTankVehicle), typeof(YakimaTankVehicleSync), typeof(YakimaTankControlState), typeof(YakimaTankDesktopInput),
                     typeof(YakimaTankVRInput), typeof(YakimaTankBoarding), typeof(YakimaTankSeat), typeof(YakimaTankWeaponSync),
                     typeof(YakimaTankHitbox), typeof(YakimaTankHitbox)
-                }.Concat(Enumerable.Repeat(typeof(YakimaTankShell), YakimaTankSetupService.ShellCount))));
+                }.Concat(Enumerable.Repeat(typeof(YakimaTankShell), YakimaTankSetupMath.ShellCount(_settings.shellLifetime, _settings.reloadTime)))));
             Assert.That(prefab.GetComponentsInChildren<VRC.SDK3.Components.VRCStation>(true), Has.Length.EqualTo(1));
             Assert.That(prefab.transform.Cast<Transform>().Count(t => PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)), Is.EqualTo(1));
         }

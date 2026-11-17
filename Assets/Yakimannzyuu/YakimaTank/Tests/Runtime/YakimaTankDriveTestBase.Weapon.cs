@@ -96,6 +96,28 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator 所有権を待つ間に片方だけほかの人へ移っても降ろさず待ちの確かめで両方そろっていなければ降ろす()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+            UdonBehaviour seat = Part(typeof(YakimaTankSeat));
+
+            // ClientSim では所有権がすぐに来て待ちにならないので、待ちの状態（入力が無効・待ちの確かめが 1 つ残る）を作る。
+            int checks = Read<int>(seat, nameof(YakimaTankSeat.ownershipChecks));
+            seat.SetProgramVariable(nameof(YakimaTankSeat.waitingOwnership), true);
+            seat.SetProgramVariable(nameof(YakimaTankSeat.ownershipWaits), checks + 1);
+            StopAdapters();
+
+            Session.SetOwner(Session.SpawnRemotePlayer("B"), WeaponObject);
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.True, "待つ間に片方がほかの人へ移っただけで降ろした");
+
+            seat.SendCustomEvent(nameof(YakimaTankSeat._CheckOwnershipTimeout));
+            yield return null;
+            Assert.That(Flag(seat, nameof(YakimaTankSeat.localSeated)), Is.False, "待ちの確かめで、両方そろっていないのに降ろさない");
+        }
+
+        [UnityTest]
         public IEnumerator 撃つと番号が進み砲口の位置と向きが入ってすぐに送り押し続けても装填ごとに1発ずつ撃つ()
         {
             yield return Place(withPlayer: true);

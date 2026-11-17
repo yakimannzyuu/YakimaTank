@@ -43,7 +43,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public const string ControlsName = "Controls";
         public const string BoardingName = "Boarding";
         public const string SeatName = "Seat";
-        public const string SeatAnchorName = "SeatAnchor";
+        public const string SeatAnchorName = "YakimaTankSeatAnchor";
         public const string WeaponName = "Weapon";
         public const string MuzzleName = "YakimaTankMuzzle";
 
@@ -51,11 +51,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public const string MuzzleMarker = "Muzzle";
         public const string ShellsName = "Shells";
         public const string HitboxName = "Hitbox";
-        public const string TurretHitboxName = "TurretHitbox";
+        public const string TurretHitboxName = "YakimaTankTurretHitbox";
         public const string ShellMaterialName = "YakimaTankShell.mat";
-
-        /// <summary>使い回す砲弾の数。装填の時間（既定 3 秒）と寿命（既定 3 秒）なら、自分の発射と受けた発射が重なっても足りる。</summary>
-        public const int ShellCount = 4;
 
         /// <summary>見た目の砲弾の球の直径（m）。</summary>
         public const float ShellSize = 0.2f;
@@ -395,6 +392,13 @@ namespace Yakimannzyuu.YakimaTank.Editor
             seatTransform.localRotation = Quaternion.identity;
             seatTransform.localScale = Vector3.one;
             Transform anchor = EnsureChild(turret, SeatAnchorName, out bool anchorCreated);
+            if (existingSeat != null && existingSeat.seatAnchor != null && existingSeat.seatAnchor != anchor &&
+                !PrefabUtility.IsPartOfPrefabInstance(existingSeat.seatAnchor.gameObject))
+            {
+                // 前の生成の位置の参照（名前や砲塔が変わった物）を残さない。
+                Object.DestroyImmediate(existingSeat.seatAnchor.gameObject);
+            }
+
             anchor.localPosition = SeatBasePosition(turret, root.transform, barrel);
             anchor.rotation = root.transform.rotation;
             anchor.localScale = Vector3.one;
@@ -494,8 +498,14 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Transform container = EnsureChild(weaponTransform, ShellsName, out _);
             Material material = EnsureShellMaterial(settings.outputPrefabPath);
             Mesh sphere = Resources.GetBuiltinResource<Mesh>("Sphere.fbx");
-            shells = new YakimaTankShell[ShellCount];
-            for (int index = 0; index < ShellCount; index++)
+            int count = YakimaTankSetupMath.ShellCount(settings.shellLifetime, settings.reloadTime);
+            foreach (Transform extra in container.Cast<Transform>().Where(t => !PrefabUtility.IsPartOfPrefabInstance(t)).Skip(count).ToList())
+            {
+                Object.DestroyImmediate(extra.gameObject);
+            }
+
+            shells = new YakimaTankShell[count];
+            for (int index = 0; index < count; index++)
             {
                 Transform shellTransform = EnsureChild(container, "Shell" + index, out bool shellCreated);
                 shellTransform.localPosition = Vector3.zero;
@@ -579,7 +589,19 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 turretHitbox = Hitbox(root, TurretHitboxName, YakimaTankSetupMath.UpperHitboxBounds(bodyBox, modelBounds), sync, record);
             }
 
-            return new[] { Hitbox(root, HitboxName, bodyBox, sync, record), turretHitbox };
+            YakimaTankHitbox[] hitboxes = { Hitbox(root, HitboxName, bodyBox, sync, record), turretHitbox };
+
+            // 前の生成で作った命中用のトリガーのうち、今回使わなかった物（名前や置き場所が変わった物）を残さない。
+            foreach (YakimaTankHitbox stale in root.GetComponentsInChildren<UdonBehaviour>(true)
+                         .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankHitbox))
+                         .Select(b => (YakimaTankHitbox)UdonSharpEditorUtility.GetProxyBehaviour(b))
+                         .Where(h => !hitboxes.Contains(h) && !PrefabUtility.IsPartOfPrefabInstance(h.gameObject))
+                         .ToList())
+            {
+                Object.DestroyImmediate(stale.gameObject);
+            }
+
+            return hitboxes;
         }
 
         /// <summary>砲塔の箱の置き場所が変わったとき（モデルを差し替えたとき）に、前の箱を残さない。</summary>
@@ -882,24 +904,27 @@ namespace Yakimannzyuu.YakimaTank.Editor
         }
 
         /// <summary>生成が足す U# の部品と、生成 Prefab の中の数。</summary>
-        private static readonly KeyValuePair<Type, int>[] GeneratedBehaviours =
+        private static KeyValuePair<Type, int>[] GeneratedBehaviours(YakimaTankSetupSettings settings)
         {
-            new KeyValuePair<Type, int>(typeof(YakimaTankVehicle), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankVehicleSync), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankControlState), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankDesktopInput), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankVRInput), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankBoarding), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankSeat), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankWeaponSync), 1),
-            new KeyValuePair<Type, int>(typeof(YakimaTankShell), ShellCount),
-            new KeyValuePair<Type, int>(typeof(YakimaTankHitbox), 2)
-        };
+            return new[]
+            {
+                new KeyValuePair<Type, int>(typeof(YakimaTankVehicle), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankVehicleSync), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankControlState), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankDesktopInput), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankVRInput), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankBoarding), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankSeat), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankWeaponSync), 1),
+                new KeyValuePair<Type, int>(typeof(YakimaTankShell), YakimaTankSetupMath.ShellCount(settings.shellLifetime, settings.reloadTime)),
+                new KeyValuePair<Type, int>(typeof(YakimaTankHitbox), 2)
+            };
+        }
 
         private static void Inspect(YakimaTankSetupSettings settings, GameObject root)
         {
             Require(root.GetComponentsInChildren<Rigidbody>(true).Length == 1, "Rigidbody はルートに 1 つだけのはずです。");
-            foreach (KeyValuePair<Type, int> generated in GeneratedBehaviours)
+            foreach (KeyValuePair<Type, int> generated in GeneratedBehaviours(settings))
             {
                 Require(root.GetComponentsInChildren<UdonBehaviour>(true).Count(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == generated.Key) == generated.Value,
                     $"{generated.Key.Name} の Udon は {generated.Value} つのはずです。");
@@ -935,7 +960,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Require(weapon.vehicleSync == sync && weapon.seat == seat && weapon.control == seat.control && weapon.turret == turret && seat.weapon == weapon &&
                     weapon.barrel != null && weapon.barrel.IsChildOf(turret) && weapon.muzzle != null && weapon.muzzle.parent == weapon.barrel,
                 "武器の同期の Udon の参照が欠けています。");
-            Require(weapon.shells != null && weapon.shells.Length == ShellCount && weapon.shells.All(shell => shell != null && shell.weapon == weapon && shell.shellRenderer != null),
+            Require(weapon.shells != null && weapon.shells.Length == YakimaTankSetupMath.ShellCount(settings.shellLifetime, settings.reloadTime) && weapon.shells.All(shell => shell != null && shell.weapon == weapon && shell.shellRenderer != null),
                 "武器の同期の Udon が、砲弾をそろえて持っていません。");
             YakimaTankHitbox[] hitboxes = root.GetComponentsInChildren<UdonBehaviour>(true)
                 .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankHitbox))
@@ -960,7 +985,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
             Require(prefab != null, "保存した Prefab を読めません: " + path);
-            foreach (Type type in GeneratedBehaviours.Select(generated => generated.Key))
+            foreach (Type type in GeneratedBehaviours(settings).Select(generated => generated.Key))
             {
                 UdonBehaviour saved = SavedUdon(prefab, type);
                 Require(saved != null && saved.programSource != null, $"保存した Prefab に {type.Name} の Udon がありません。");
@@ -992,7 +1017,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             Require(savedWeapon.publicVariables.TryGetVariableValue(nameof(YakimaTankWeaponSync.shells), out object savedShells) &&
-                    savedShells is Array shellArray && shellArray.Length == ShellCount && shellArray.Cast<object>().All(shell => shell is Object reference && reference != null),
+                    savedShells is Array shellArray && shellArray.Length == YakimaTankSetupMath.ShellCount(settings.shellLifetime, settings.reloadTime) && shellArray.Cast<object>().All(shell => shell is Object reference && reference != null),
                 "保存した Prefab の武器の同期の Udon に砲弾の参照が入っていません。");
             Require(savedWeapon.publicVariables.TryGetVariableValue(nameof(YakimaTankWeaponSync.reloadTime), out float reload) && Mathf.Approximately(reload, settings.reloadTime),
                 "保存した Prefab の武器の同期の Udon に装填の時間が入っていません。");
