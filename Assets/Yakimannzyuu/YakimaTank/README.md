@@ -130,8 +130,15 @@ https://github.com/yakimannzyuu/YakimaTank.git?path=/Assets/Yakimannzyuu/YakimaT
 
 - 既定は車両に付いて行きます（「Follow Position・Follow Rotation」が車体から見た位置と向き）。「Follow Vehicle」を外すと、置いた場所に留まります。
 - 表示は各自の画面だけです。乗っていない人の画面では、操作の値は初期値のままです。
-- 同期の欄：`OWNER`（自分の画面で計算している）か `REMOTE`、Owner（オーナーのプレイヤー ID。自分なら `(you)`）、Driver（運転手の ID。いなければ `-`）、Epoch（世代。所有権を取ったときと最初の位置に戻したときに進む）、オーナーなら Sent/s と Req/s（実際に送った回数と要求した回数、毎秒）と Contact・Stale（重なっている相手の数と、状態が古くてぶつからない相手の数）、オーナー以外なら Age（最新の状態の古さ、秒）、Rejected（使わなかった状態の数）。
+- 同期の欄：`OWNER`（自分の画面で計算している）か `REMOTE`、Owner（オーナーのプレイヤー ID。自分なら `(you)`）、Driver（運転手の ID。いなければ `-`）、Epoch（世代。所有権を取ったときと最初の位置に戻したときに進む）、オーナーなら Sent/s と Req/s（実際に送った回数と要求した回数、毎秒）と Contact・Stale（重なっている相手の数と、状態が古くてぶつからない相手の数）と Bytes（車体・武器・HP の同期が最後に送った大きさ、バイト。VRChat の値で、Unity の Play では 0 か仮の値。部品がなければ `-`）、オーナー以外なら Age（最新の状態の古さ、秒）、Rejected（使わなかった状態の数）。
 - 文字は英字だけです（日本語のフォントを同梱しないため）。
+
+### 演出を作るとき
+
+車体の同期の Udon（`YakimaTankVehicleSync`。ルート）の `_GetDisplayVelocity()` と `_GetDisplayAngularVelocity()` が、表示用の速度と角速度（ワールドの向き、m/s・rad/s）を返します。履帯・転輪・エンジンの音などを、各自の画面で出すときに使えます（同期は増えません）。
+
+- オーナーの画面：Rigidbody の値
+- ほかの人の画面：最新の受けた状態の値（見えている位置より少し先の値）。止まった状態を受けた後、状態が届かなくなって見た目も止まった後、まだ状態を受けていないときは 0
 
 ### Play 中の調整
 

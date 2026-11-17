@@ -241,7 +241,7 @@ sequenceDiagram
 | 部品 | 場所 | 用途 |
 |---|---|---|
 | `YakimaTankVehicle` | Runtime | 走行・制動・旋回・再適用。自分が座っている間は共通操作値から走る（UdonSharp）。オーナーの画面でだけ物理を計算する。物理の更新の最初に接触の速度の変化を足し、押されている間は車輪の張り付きを外す（判定は静的な関数）。破壊の間は入力を止める。復活（`_Respawn`）は、Editor の「最初の位置に戻す」と中の初期化を共用する |
-| `YakimaTankVehicleSync` | Runtime | 車体の同期（ルート、Manual）。所有権の切り替え、送る状態の採取と送る間隔、受けた状態の確かめ・保留・履歴・補間・先読み、物理の形の有効・無効、同じ人の車両同士の通常の当たりを外す。車両同士の簡易衝突（接触用の姿勢・水平面の重なり・速度の変化）。計算は静的な関数 |
+| `YakimaTankVehicleSync` | Runtime | 車体の同期（ルート、Manual）。所有権の切り替え、送る状態の採取と送る間隔、受けた状態の確かめ・保留・履歴・補間・先読み、物理の形の有効・無効、同じ人の車両同士の通常の当たりを外す。車両同士の簡易衝突（接触用の姿勢・水平面の重なり・速度の変化）。演出のための表示用の速度・角速度（オーナーは Rigidbody、ほかの人は最新の受けた状態）。最後に送れた大きさ。計算は静的な関数 |
 | `YakimaTankVehicleRegistry` | Runtime | シーンの車両の一覧（同期しない）。始まるときに各車両へ自分と一覧の中の番号を知らせる |
 | `YakimaTankWeaponSync` | Runtime | 武器の同期（`Weapon`、Manual）。所有権、砲塔と砲身の角度、装填と発射、送る・受ける（受けた状態の確かめ）、見た目の砲弾、命中の申告。破壊の間は撃たず、復活で自分の領域を戻す。計算は静的な関数 |
 | `YakimaTankLife` | Runtime | 生存の状態（ルート、Manual）。命中の申告を受けて確かめ、HP を引き、破壊・復活と HP のバー。HP・復活の世代・処理した命中を送る・受ける（受けた状態の確かめ）。計算は静的な関数 |
@@ -252,7 +252,7 @@ sequenceDiagram
 | `YakimaTankBoarding` | Runtime | 乗車の判定の Interact |
 | `YakimaTankDesktopInput` | Runtime | Desktop の入力（W・S・A・D、視点、左クリック）。変換は静的な関数 |
 | `YakimaTankVRInput` | Runtime | VR の入力（左手で走行、右手で砲と射撃）。変換は静的な関数 |
-| `YakimaTankDebugPanel` | Runtime | デバッグ UI。共通操作値を箱の大きさで、同期と接触の状態を UI の文字で見せる。別 Prefab |
+| `YakimaTankDebugPanel` | Runtime | デバッグ UI。共通操作値を箱の大きさで、同期と接触の状態と送った大きさ（車体・武器・生存の状態）を UI の文字で見せる。別 Prefab |
 | `YakimaTankSetupSettings` | Editor | 設定アセット（正本）。読み込むときに今の版へ移す |
 | `YakimaTankSetupValidator` | Editor | 設定の検証（Error・Warning）。`Walkthrough` レイヤー・砲塔・元のモデルのコライダー・砲塔と砲身を除いた車体のメッシュも見る |
 | `YakimaTankSettingsWriter` | Editor | 階層パスで設定を書く。解決できなければ何も書かない |
