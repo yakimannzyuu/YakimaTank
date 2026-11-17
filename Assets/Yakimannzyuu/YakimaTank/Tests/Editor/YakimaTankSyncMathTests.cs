@@ -309,13 +309,31 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
-        public void デバッグUIの同期の文字はオーナーなら送った回数と要求した回数と接触を出しオーナー以外なら最新の状態の古さを出す()
+        public void デバッグUIの同期の文字はオーナーなら送った回数と要求した回数と接触と送った大きさを出しオーナー以外なら最新の状態の古さを出す()
         {
-            Assert.That(YakimaTankDebugPanel.SyncSummary(true, 3, true, 3, 2, -1f, 9.96f, 10f, 0, 2, 1),
-                Is.EqualTo("OWNER\nOwner 3 (you)\nDriver 3\nEpoch 2\nSent/s 10.0  Req/s 10.0\nContact 2  Stale 1\nRejected 0"));
-            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 2, 0.123f, 0f, 0f, 4, 2, 1),
-                Is.EqualTo("REMOTE\nOwner 3\nDriver -\nEpoch 2\nAge 0.12\nRejected 4"), "オーナー以外は接触を計算しないので出さない");
-            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 0, -1f, 0f, 0f, 0, 0, 0), Does.Contain("Age -"), "まだ状態を受けていない");
+            Assert.That(YakimaTankDebugPanel.SyncSummary(true, 3, true, 3, 2, -1f, 9.96f, 10f, 0, 2, 1, 70, 45, 30),
+                Is.EqualTo("OWNER\nOwner 3 (you)\nDriver 3\nEpoch 2\nSent/s 10.0  Req/s 10.0\nContact 2  Stale 1\nBytes 70/45/30\nRejected 0"));
+            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 2, 0.123f, 0f, 0f, 4, 2, 1, 70, 45, 30),
+                Is.EqualTo("REMOTE\nOwner 3\nDriver -\nEpoch 2\nAge 0.12\nRejected 4"), "オーナー以外は接触を計算せず送らないので出さない");
+            Assert.That(YakimaTankDebugPanel.SyncSummary(false, 3, false, Sync.NoPlayer, 0, -1f, 0f, 0f, 0, 0, 0, 0, 0, 0), Does.Contain("Age -"), "まだ状態を受けていない");
+            Assert.That(YakimaTankDebugPanel.SyncSummary(true, 3, true, 3, 2, -1f, 0f, 0f, 0, 0, 0, 70, -1, -1), Does.Contain("\nBytes 70/-/-\n"), "武器や生存の状態の部品がない");
+        }
+
+        [Test]
+        public void 表示用の速度はオーナー以外では最新の受けた状態の値を返す()
+        {
+            var velocity = new Vector3(1f, 0f, 3f);
+            Assert.That(Sync.DisplayVelocity(true, velocity, false, 9.8f, 10f, 0.25f), Is.EqualTo(velocity), "表示が最新の状態より前（ふつう）でも最新の値");
+            Assert.That(Sync.DisplayVelocity(true, velocity, false, 10.25f, 10f, 0.25f), Is.EqualTo(velocity), "先読みの上限ちょうど");
+        }
+
+        [Test]
+        public void 表示用の速度は止まった印と先読みの上限を過ぎた後と状態がないときは0()
+        {
+            var velocity = new Vector3(1f, 0f, 3f);
+            Assert.That(Sync.DisplayVelocity(true, velocity, true, 9.8f, 10f, 0.25f), Is.EqualTo(Vector3.zero), "止まった印");
+            Assert.That(Sync.DisplayVelocity(true, velocity, false, 10.3f, 10f, 0.25f), Is.EqualTo(Vector3.zero), "表示も止まっている");
+            Assert.That(Sync.DisplayVelocity(false, velocity, false, 9.8f, 10f, 0.25f), Is.EqualTo(Vector3.zero), "状態をまだ受けていない");
         }
 
         [Test]

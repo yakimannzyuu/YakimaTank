@@ -104,6 +104,9 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>受けた状態の送った時刻（受ける側の Time.realtimeSinceStartup の軸）。OnDeserialization が入れる。</summary>
         public float incomingSendTime;
 
+        /// <summary>最後に送れた状態の大きさ（バイト。VRChat が知らせる値）。デバッグ UI が出す。</summary>
+        public int lastSentBytes;
+
         [Header("状態（実行中に変わる）")]
         public bool isOwnerMode;
         public int ownerId = NoPlayer;
@@ -555,6 +558,7 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             sentCount++;
+            lastSentBytes = result.byteCount;
             _hasSent = true;
             _sentPosition = syncPosition;
             _sentRotation = syncRotation;
@@ -729,6 +733,44 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             body.transform.SetPositionAndRotation(position, rotation);
+        }
+
+        /// <summary>
+        /// 表示用の速度（ワールドの向き、m/s。仕様書 0.7.0 の 1.1）。履帯・転輪・エンジンの音などの演出が、各クライアントで読む。
+        /// オーナーは Rigidbody の値、オーナー以外は最新の受けた状態の値（<see cref="DisplayVelocity"/>）。
+        /// </summary>
+        public Vector3 _GetDisplayVelocity()
+        {
+            return _DisplayValue(false);
+        }
+
+        /// <summary>表示用の角速度（ワールドの向き、rad/s）。決め方は <see cref="_GetDisplayVelocity"/> と同じ。</summary>
+        public Vector3 _GetDisplayAngularVelocity()
+        {
+            return _DisplayValue(true);
+        }
+
+        private Vector3 _DisplayValue(bool angular)
+        {
+            if (isOwnerMode)
+            {
+                if (!Utilities.IsValid(body))
+                {
+                    return Vector3.zero;
+                }
+
+                return angular ? body.angularVelocity : body.velocity;
+            }
+
+            int latest = _historyCount - 1;
+            if (latest < 0)
+            {
+                return Vector3.zero;
+            }
+
+            float display = DisplayTime(Networking.SimulationTime(gameObject), Time.realtimeSinceStartup, sendInterval);
+            return DisplayVelocity(true, angular ? _historyAngulars[latest] : _historyVelocities[latest], _historyStops[latest], display, _historyTimes[latest],
+                maxExtrapolation);
         }
 
         /// <summary>デバッグ UI：オーナー以外で、最新の状態の古さ（秒）。状態がなければ負。</summary>
@@ -964,6 +1006,15 @@ namespace Yakimannzyuu.YakimaTank
         public static int KeepHistory(int epoch, int historyEpoch, int count)
         {
             return epoch == historyEpoch ? count : 0;
+        }
+
+        /// <summary>
+        /// オーナー以外の表示用の速度（角速度にも使う。仕様書 0.7.0 の 1.1）。最新の受けた状態の値。
+        /// 最新の状態が止まった印のとき、表示の時刻が最新の状態の時刻を先読みの上限より過ぎたとき（表示も止まっている）、状態がないときは 0。
+        /// </summary>
+        public static Vector3 DisplayVelocity(bool hasState, Vector3 latestVelocity, bool stopped, float displayTime, float latestTime, float maxExtrapolation)
+        {
+            return hasState && !stopped && displayTime - latestTime <= maxExtrapolation ? latestVelocity : Vector3.zero;
         }
 
         public static Vector3 SamplePosition(float[] times, Vector3[] positions, Vector3[] velocities, bool[] stops, int count, float time, float maxExtrapolation)

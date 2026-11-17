@@ -113,16 +113,18 @@ namespace Yakimannzyuu.YakimaTank
             VRCPlayerApi local = Networking.LocalPlayer;
             bool ownerIsYou = Utilities.IsValid(local) && local.playerId == sync.ownerId;
             int driver = sync._HasDriver() ? sync.driverId : YakimaTankVehicleSync.NoPlayer;
+            int weaponBytes = Utilities.IsValid(sync.weapon) ? sync.weapon.lastSentBytes : -1;
+            int lifeBytes = Utilities.IsValid(vehicle.life) ? vehicle.life.lastSentBytes : -1;
             syncText.text = SyncSummary(sync.isOwnerMode, sync.ownerId, ownerIsYou, driver, sync.epoch, sync._GetAge(), _sentRate, _requestedRate, sync.rejectedCount,
-                sync.contactCount, sync.contactCutoffCount);
+                sync.contactCount, sync.contactCutoffCount, sync.lastSentBytes, weaponBytes, lifeBytes);
         }
 
         /// <summary>
-        /// 同期の状態の文字（仕様書 0.3.0 の 1.7・0.4.0 の 1.7）。オーナーは送った回数と要求した回数と接触、オーナー以外は最新の状態の古さを出す。
-        /// 接触はオーナーだけが計算するので、オーナー以外では出さない。
+        /// 同期の状態の文字（仕様書 0.3.0 の 1.7・0.4.0 の 1.7・0.7.0 の 1.2）。オーナーは送った回数と要求した回数と接触と送った大きさ
+        /// （車体/武器/生存の状態）、オーナー以外は最新の状態の古さを出す。接触と送ることはオーナーだけがするので、オーナー以外では出さない。
         /// </summary>
         public static string SyncSummary(bool owner, int ownerId, bool ownerIsYou, int driverId, int epoch, float age, float sentRate, float requestedRate, int rejected,
-            int contacts, int stale)
+            int contacts, int stale, int bodyBytes, int weaponBytes, int lifeBytes)
         {
             string text = (owner ? "OWNER" : "REMOTE")
                           + "\nOwner " + ownerId + (ownerIsYou ? " (you)" : "")
@@ -130,8 +132,15 @@ namespace Yakimannzyuu.YakimaTank
                           + "\nEpoch " + epoch;
             text += owner
                 ? "\nSent/s " + sentRate.ToString("F1") + "  Req/s " + requestedRate.ToString("F1") + "\nContact " + contacts + "  Stale " + stale
+                  + "\nBytes " + ByteText(bodyBytes) + "/" + ByteText(weaponBytes) + "/" + ByteText(lifeBytes)
                 : "\nAge " + (age < 0f ? "-" : age.ToString("F2"));
             return text + "\nRejected " + rejected;
+        }
+
+        /// <summary>送った大きさの文字。部品がなければ（負）-。</summary>
+        private static string ByteText(int bytes)
+        {
+            return bytes < 0 ? "-" : bytes.ToString();
         }
 
         private void _SetBar(Transform bar, float value)

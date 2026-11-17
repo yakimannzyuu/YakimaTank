@@ -97,20 +97,21 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             }
         }
 
-        private void Inject(int sender, int epoch, float sendTime, Vector3 position, Quaternion rotation, Vector3 velocity, bool stopped, int driver = Sync.NoPlayer)
+        private void Inject(int sender, int epoch, float sendTime, Vector3 position, Quaternion rotation, Vector3 velocity, bool stopped, int driver = Sync.NoPlayer,
+            Vector3 angular = default)
         {
-            InjectInto(SyncUdon, sender, epoch, sendTime, position, rotation, velocity, stopped, driver);
+            InjectInto(SyncUdon, sender, epoch, sendTime, position, rotation, velocity, stopped, driver, angular);
         }
 
         private static void InjectInto(UdonBehaviour sync, int sender, int epoch, float sendTime, Vector3 position, Quaternion rotation, Vector3 velocity, bool stopped,
-            int driver = Sync.NoPlayer)
+            int driver = Sync.NoPlayer, Vector3 angular = default)
         {
             sync.SetProgramVariable(nameof(Sync.syncFormat), Sync.SyncFormat);
             sync.SetProgramVariable(nameof(Sync.syncEpoch), epoch);
             sync.SetProgramVariable(nameof(Sync.syncPosition), position);
             sync.SetProgramVariable(nameof(Sync.syncRotation), rotation);
             sync.SetProgramVariable(nameof(Sync.syncVelocity), velocity);
-            sync.SetProgramVariable(nameof(Sync.syncAngularVelocity), Vector3.zero);
+            sync.SetProgramVariable(nameof(Sync.syncAngularVelocity), angular);
             sync.SetProgramVariable(nameof(Sync.syncStopped), stopped);
             sync.SetProgramVariable(nameof(Sync.syncDriver), driver);
             sync.SetProgramVariable(nameof(Sync.syncSender), sender);

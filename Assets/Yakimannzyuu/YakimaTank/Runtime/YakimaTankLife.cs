@@ -69,6 +69,9 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>受けた状態の送った時刻（受ける側の Time.realtimeSinceStartup の軸）。OnDeserialization が入れる。</summary>
         public float incomingSendTime;
 
+        /// <summary>最後に送れた状態の大きさ（バイト。VRChat が知らせる値）。デバッグ UI が出す。</summary>
+        public int lastSentBytes;
+
         /// <summary>受けた命中の申告。ReceiveHit が入れる。PlayMode のテストは、ここへ入れて _AcceptHit を呼ぶ。</summary>
         public int incomingHitPlayer = NoPlayer;
         public int incomingHitShooter;
@@ -360,6 +363,14 @@ namespace Yakimannzyuu.YakimaTank
             {
                 syncHitPlayers[index] = hitPlayers[index];
                 syncHitNumbers[index] = hitNumbers[index];
+            }
+        }
+
+        public override void OnPostSerialization(SerializationResult result)
+        {
+            if (result.success)
+            {
+                lastSentBytes = result.byteCount;
             }
         }
 

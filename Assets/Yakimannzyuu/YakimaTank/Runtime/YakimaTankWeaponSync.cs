@@ -90,6 +90,9 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>受けた状態の送った時刻（受ける側の Time.realtimeSinceStartup の軸）。OnDeserialization が入れる。</summary>
         public float incomingSendTime;
 
+        /// <summary>最後に送れた状態の大きさ（バイト。VRChat が知らせる値）。デバッグ UI が出す。</summary>
+        public int lastSentBytes;
+
         [Header("状態（実行中に変わる）")]
         public bool isOwnerMode;
         public float yaw;
@@ -401,6 +404,14 @@ namespace Yakimannzyuu.YakimaTank
             syncFireNumber = fireNumber;
             syncFirePosition = firePosition;
             syncFireDirection = fireDirection;
+        }
+
+        public override void OnPostSerialization(SerializationResult result)
+        {
+            if (result.success)
+            {
+                lastSentBytes = result.byteCount;
+            }
         }
 
         public override void OnDeserialization(DeserializationResult result)
