@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using UdonSharpEditor;
 using UnityEditor;
 using UnityEngine;
 using VRC.Udon;
@@ -21,8 +23,27 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 throw new ArgumentNullException(nameof(vehicle), "再適用する車両がありません。");
             }
 
-            YakimaTankRuntimeValues.WriteToUdon(values, vehicle);
+            WriteAll(values, vehicle.gameObject);
             vehicle.SendCustomEvent(nameof(YakimaTankVehicle._ApplySettingsAndReset));
+        }
+
+        /// <summary>車両と、その座席・VR の入力に値を書き、座席のずらしを入れ直す。</summary>
+        private static void WriteAll(YakimaTankSetupSettings values, GameObject root)
+        {
+            foreach (var group in YakimaTankRuntimeValues.Groups)
+            {
+                UdonBehaviour target = YakimaTankRuntimeValues.FindBehaviour(root, group.Key);
+                if (target != null)
+                {
+                    YakimaTankRuntimeValues.WriteToUdon(values, target);
+                }
+            }
+
+            UdonBehaviour seat = YakimaTankRuntimeValues.FindBehaviour(root, typeof(YakimaTankSeat));
+            if (seat != null)
+            {
+                seat.SendCustomEvent(nameof(YakimaTankSeat._ApplySeatOffset));
+            }
         }
 
         public static GameObject Respawn(GameObject current, GameObject prefab, YakimaTankSetupSettings values)
@@ -36,6 +57,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Vector3 position = Vector3.zero;
             Quaternion rotation = Quaternion.identity;
             Transform parent = null;
+            var panels = new List<UdonBehaviour>();
             if (current != null)
             {
                 parent = current.transform.parent;
@@ -48,6 +70,11 @@ namespace Yakimannzyuu.YakimaTank.Editor
                     rotation = (Quaternion)old.GetProgramVariable(nameof(YakimaTankVehicle.spawnRotation));
                 }
 
+                if (old != null)
+                {
+                    panels = PanelsShowing(old, current);
+                }
+
                 Object.Destroy(current);
             }
 
@@ -57,12 +84,37 @@ namespace Yakimannzyuu.YakimaTank.Editor
             clone.name = prefab.name;
             RegisterAll(clone);
             UdonBehaviour vehicle = YakimaTankRuntimeValues.FindVehicle(clone);
-            YakimaTankRuntimeValues.WriteToUdon(values, vehicle);
+            WriteAll(values, clone);
             vehicle.SetProgramVariable(nameof(YakimaTankVehicle.applyOnStart), false);
             clone.transform.SetParent(parent, true);
             Object.Destroy(holder);
             vehicle.SendCustomEvent(nameof(YakimaTankVehicle._ApplySettingsAndReset));
+            foreach (UdonBehaviour panel in panels)
+            {
+                panel.SetProgramVariable(nameof(YakimaTankDebugPanel.vehicle), vehicle);
+            }
+
             return clone;
+        }
+
+        /// <summary>
+        /// 前の車両を表示しているデバッグ UI（読み込んでいるシーンから）。前の車両の中のものは車両と一緒に消えるので含めない。
+        /// 車両とは別の Prefab なので、出し直しで参照を差し替えないと、消えた車両を指したまま止まる。
+        /// </summary>
+        private static List<UdonBehaviour> PanelsShowing(UdonBehaviour vehicle, GameObject vehicleRoot)
+        {
+            var panels = new List<UdonBehaviour>();
+            foreach (UdonBehaviour behaviour in Object.FindObjectsOfType<UdonBehaviour>(true))
+            {
+                if (!behaviour.transform.IsChildOf(vehicleRoot.transform)
+                    && UdonSharpEditorUtility.GetUdonSharpBehaviourType(behaviour) == typeof(YakimaTankDebugPanel)
+                    && ReferenceEquals(behaviour.GetProgramVariable(nameof(YakimaTankDebugPanel.vehicle)), vehicle))
+                {
+                    panels.Add(behaviour);
+                }
+            }
+
+            return panels;
         }
 
         /// <summary>VRCInstantiate と同じく、複製して全部の UdonBehaviour を登録する。複製しただけでは Udon が動かない。</summary>

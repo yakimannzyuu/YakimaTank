@@ -19,6 +19,10 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
     {
         public const string Root = "Assets/__YakimaTankTests";
         public const float WheelRadius = 0.4f;
+        public const string TurretPath = "Hull/Turret";
+
+        /// <summary>砲塔の上面の高さ。車体の上 1.5 m に、縦 0.6 を車体の 0.8 倍した 0.48 の半分を足す。</summary>
+        public const float TurretTop = 1.74f;
 
         public TestWorkspace(string name = null)
         {
@@ -39,8 +43,11 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
 
         public string OutputPath => Folder + "/Generated/Vehicle.prefab";
 
-        /// <summary>rootRotation は、FBX の軸の変換のようにモデルのルート自身が持つ回転。</summary>
-        public GameObject CreateModel(string name = "TestTank", Quaternion? rootRotation = null)
+        /// <summary>
+        /// rootRotation は、FBX の軸の変換のようにモデルのルート自身が持つ回転。
+        /// withColliders なら、車体にトリガーでない BoxCollider、砲塔にトリガーの SphereCollider を残す（コライダー付きのモデル）。
+        /// </summary>
+        public GameObject CreateModel(string name = "TestTank", Quaternion? rootRotation = null, bool withColliders = false)
         {
             Scene preview = EditorSceneManager.NewPreviewScene();
             try
@@ -48,14 +55,13 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 GameObject root = Node(preview, name, null, Vector3.zero);
                 root.transform.localRotation = rootRotation ?? Quaternion.identity;
                 GameObject hull = Primitive(preview, PrimitiveType.Cube, "Hull", root.transform, new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
-                Primitive(preview, PrimitiveType.Cube, "Turret", hull.transform, new Vector3(0f, 0.75f, 0f), new Vector3(0.6f, 0.6f, 0.4f));
-                GameObject left = Node(preview, "Left", root.transform, Vector3.zero);
-                GameObject right = Node(preview, "Right", root.transform, Vector3.zero);
-                foreach (float z in new[] { -1.2f, 0f, 1.2f })
+                GameObject turret = Primitive(preview, PrimitiveType.Cube, "Turret", hull.transform, new Vector3(0f, 0.75f, 0f), new Vector3(0.6f, 0.6f, 0.4f));
+                if (withColliders)
                 {
-                    Wheel(preview, left.transform, new Vector3(-1.15f, WheelRadius, z));
-                    Wheel(preview, right.transform, new Vector3(1.15f, WheelRadius, z));
+                    hull.AddComponent<BoxCollider>();
+                    turret.AddComponent<SphereCollider>().isTrigger = true;
                 }
+                AddWheels(preview, root.transform);
 
                 string path = Folder + "/" + name + ".prefab";
                 GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
@@ -65,6 +71,67 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             finally
             {
                 EditorSceneManager.ClosePreviewScene(preview);
+            }
+        }
+
+        /// <summary>メッシュのない親のモデルで、車体のメッシュの前端と上端。</summary>
+        public const float MeshlessHullFront = 2f;
+        public const float MeshlessHullTop = 1.3f;
+
+        /// <summary>メッシュのない親のモデルで、砲塔のメッシュの上面の中央（砲身を含めない座席の自動の位置）。</summary>
+        public static readonly Vector3 MeshlessTurretTop = new Vector3(0f, 1.7f, -0.5f);
+
+        /// <summary>
+        /// 車体と砲塔が、メッシュを持たない親のモデル。Body の下に車体のメッシュと砲塔、砲塔の下に砲塔のメッシュと、
+        /// 車体の前端（z = 2）より 3 m 前（z = 5）まで突き出す砲身を置く。withHullMesh を外すと、車体の下は砲塔だけになる。
+        /// </summary>
+        public GameObject CreateMeshlessParentModel(string name = "MeshlessParentTank", bool withHullMesh = true)
+        {
+            Scene preview = EditorSceneManager.NewPreviewScene();
+            try
+            {
+                GameObject root = Node(preview, name, null, Vector3.zero);
+                GameObject body = Node(preview, "Body", root.transform, Vector3.zero);
+                if (withHullMesh)
+                {
+                    Primitive(preview, PrimitiveType.Cube, "HullMesh", body.transform, new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
+                }
+
+                GameObject turret = Node(preview, "Turret", body.transform, new Vector3(0f, 1.5f, -0.5f));
+                Primitive(preview, PrimitiveType.Cube, "TurretMesh", turret.transform, Vector3.zero, new Vector3(1.2f, 0.4f, 1.6f));
+                Primitive(preview, PrimitiveType.Cube, "Barrel", turret.transform, new Vector3(0f, 0f, 3.15f), new Vector3(0.15f, 0.15f, 4.7f));
+                AddWheels(preview, root.transform);
+
+                string path = Folder + "/" + name + ".prefab";
+                GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
+                Object.DestroyImmediate(root);
+                return prefab;
+            }
+            finally
+            {
+                EditorSceneManager.ClosePreviewScene(preview);
+            }
+        }
+
+        /// <summary><see cref="CreateMeshlessParentModel"/> の対応を全部埋めた設定（砲身も対応させる）。</summary>
+        public YakimaTankSetupSettings CreateMeshlessParentSettings(GameObject model, string name = "MeshlessParentSettings")
+        {
+            YakimaTankSetupSettings settings = CreateSettings(model, name);
+            settings.body = model.transform.Find("Body");
+            settings.turret = model.transform.Find("Body/Turret");
+            settings.barrel = model.transform.Find("Body/Turret/Barrel");
+            EditorUtility.SetDirty(settings);
+            return settings;
+        }
+
+        private static void AddWheels(Scene scene, Transform root)
+        {
+            GameObject left = Node(scene, "Left", root, Vector3.zero);
+            GameObject right = Node(scene, "Right", root, Vector3.zero);
+            foreach (float z in new[] { -1.2f, 0f, 1.2f })
+            {
+                Wheel(scene, left.transform, new Vector3(-1.15f, WheelRadius, z));
+                Wheel(scene, right.transform, new Vector3(1.15f, WheelRadius, z));
             }
         }
 
@@ -102,7 +169,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             settings.body = model.transform.Find("Hull");
             settings.leftWheels = Children(model.transform.Find("Left"));
             settings.rightWheels = Children(model.transform.Find("Right"));
-            settings.turret = null;
+            settings.turret = model.transform.Find(TurretPath);
             settings.barrel = null;
             settings.outputPrefabPath = OutputPath;
             AssetDatabase.CreateAsset(settings, Folder + "/" + name + ".asset");

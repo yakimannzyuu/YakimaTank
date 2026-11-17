@@ -120,7 +120,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             result.PlacementId = settings.placementId;
             if (container != null)
             {
-                result.Instance = container.GetChild(0).gameObject;
+                result.Instance = FindVehicleInstance(container, prefab);
                 result.Position = container.position;
                 result.Rotation = container.eulerAngles;
                 result.Changes.Add("変更なし（同じ配置 ID の車両がある。生成 Prefab の変更はインスタンスに自動で入る）");
@@ -211,17 +211,50 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 conflicts.Add("入れ物にコンポーネントが足されています。");
             }
 
-            if (container.childCount != 1)
+            // 入れ物の中は、車両 1 台と、その車両を指すデバッグ UI 1 枚まで。開発ワールドの更新はパネルを並べて置くので、
+            // パネルを競合にすると 2 回目の更新が止まる。それ以外の追加物は、手の変更として今までどおり止める。
+            GameObject instance = null;
+            var panels = new List<GameObject>();
+            foreach (Transform child in container)
             {
-                conflicts.Add($"入れ物の中が {container.childCount} 個です（車両 1 台のはず）。");
+                if (IsInstanceOf(child.gameObject, prefab))
+                {
+                    if (instance == null)
+                    {
+                        instance = child.gameObject;
+                    }
+                    else
+                    {
+                        conflicts.Add($"入れ物の中に車両が 2 台以上あります: {child.name}");
+                    }
+                }
+                else if (YakimaTankDebugPanelPlacement.IsPanel(child.gameObject))
+                {
+                    panels.Add(child.gameObject);
+                }
+                else
+                {
+                    conflicts.Add($"{child.name} は、生成 Prefab（{settings.outputPrefabPath}）のインスタンスではありません（デバッグ UI でもありません）。");
+                }
+            }
+
+            if (instance == null)
+            {
+                conflicts.Add($"入れ物の中に、生成 Prefab（{settings.outputPrefabPath}）のインスタンスの車両がありません。");
                 return;
             }
 
-            GameObject instance = container.GetChild(0).gameObject;
-            if (!PrefabUtility.IsOutermostPrefabInstanceRoot(instance) || PrefabUtility.GetCorrespondingObjectFromSource(instance) != prefab)
+            if (panels.Count > 1)
             {
-                conflicts.Add($"{instance.name} は生成 Prefab（{settings.outputPrefabPath}）のインスタンスではありません。");
-                return;
+                conflicts.Add($"入れ物の中にデバッグ UI が {panels.Count} 枚あります（1 枚まで）。");
+            }
+
+            foreach (GameObject panel in panels)
+            {
+                if (!YakimaTankDebugPanelPlacement.PointsTo(panel, instance))
+                {
+                    conflicts.Add($"デバッグ UI {panel.name} が、この入れ物の車両を指していません（車両の指定がないか、別の車両）。");
+                }
             }
 
             if (instance.transform.localPosition.sqrMagnitude > PositionTolerance * PositionTolerance ||
@@ -265,6 +298,25 @@ namespace Yakimannzyuu.YakimaTank.Editor
             {
                 conflicts.Add("消したオブジェクトがあります: " + Describe(removed.assetGameObject));
             }
+        }
+
+        private static bool IsInstanceOf(GameObject candidate, GameObject prefab)
+        {
+            return PrefabUtility.IsOutermostPrefabInstanceRoot(candidate) && PrefabUtility.GetCorrespondingObjectFromSource(candidate) == prefab;
+        }
+
+        /// <summary>入れ物の中の車両。子の順番に頼らず、生成 Prefab のインスタンスで見分ける。</summary>
+        internal static GameObject FindVehicleInstance(Transform container, GameObject prefab)
+        {
+            foreach (Transform child in container)
+            {
+                if (IsInstanceOf(child.gameObject, prefab))
+                {
+                    return child.gameObject;
+                }
+            }
+
+            return null;
         }
 
         private static bool IsSameScale(Vector3 scale, Vector3 expected)
