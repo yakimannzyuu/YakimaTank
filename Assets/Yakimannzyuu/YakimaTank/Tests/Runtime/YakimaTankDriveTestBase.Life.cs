@@ -188,6 +188,63 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator 破壊の間は座っていても撃てず破壊が解けると撃てる()
+        {
+            yield return PlaceWithShooter();
+            yield return BoardAndHoldFire(false);
+            yield return null;
+            Assert.That(FireNumber, Is.EqualTo(0), "座る前に撃っている（判定にならない）");
+
+            // 座席への知らせを通さずに HP だけを 0 にし、武器が自分で生存の状態を見て撃たないことを確かめる（座席が降ろす前の間）。
+            LifeUdon.SetProgramVariable(nameof(Life.health), 0);
+            HoldFire(true);
+            for (int frame = 0; frame < 5; frame++)
+            {
+                yield return null;
+            }
+
+            Assert.That(FireNumber, Is.EqualTo(0), "破壊の間に撃った");
+
+            LifeUdon.SetProgramVariable(nameof(Life.health), 100);
+            float start = Time.realtimeSinceStartup;
+            while (FireNumber == 0 && Time.realtimeSinceStartup - start < 1f)
+            {
+                yield return null;
+            }
+
+            Assert.That(FireNumber, Is.EqualTo(1), "破壊が解けても撃てない");
+        }
+
+        [UnityTest]
+        public IEnumerator Startの前に届いた生存の状態も使いStartで最大に戻さない()
+        {
+            yield return Place(withPlayer: true);
+            VRCPlayerApi other = Session.SpawnRemotePlayer("B");
+
+            // 途中参加で、車両の Start より先に状態が届いた場合を作る。非アクティブの入れ物の中で複製して登録し、Start の前に入れる。
+            var holder = new GameObject("BeforeStart");
+            holder.SetActive(false);
+            _other = Object.Instantiate(_prefab, new Vector3(30f, SpawnHeight, 0f), Quaternion.identity, holder.transform);
+            foreach (UdonBehaviour behaviour in _other.GetComponentsInChildren<UdonBehaviour>(true))
+            {
+                UdonManager.Instance.RegisterUdonBehaviour(behaviour);
+            }
+
+            Session.SetOwner(other, _other);
+            UdonBehaviour life = YakimaTankRuntimeValues.FindBehaviour(_other, typeof(Life));
+            InjectLife(life, Time.realtimeSinceStartup, 40, 2, new int[0], new int[0]);
+            Assert.That(Read<int>(life, nameof(Life.health)), Is.EqualTo(40), "Start の前に届いた状態を使わない");
+
+            _other.transform.SetParent(null, true);
+            Object.Destroy(holder);
+            yield return null;
+            yield return null;
+
+            Assert.That(Read<int>(life, nameof(Life.health)), Is.EqualTo(40), "Start で HP を最大に戻した");
+            Assert.That(Read<int>(life, nameof(Life.respawnGeneration)), Is.EqualTo(2));
+        }
+
+        [UnityTest]
         public IEnumerator 待ち時間の後に復活し車体と武器とHPが初期値に戻り世代が進む()
         {
             yield return PlaceWithShooter();
