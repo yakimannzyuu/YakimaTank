@@ -60,6 +60,19 @@ namespace Yakimannzyuu.YakimaTank.Editor
             nameof(YakimaTankVehicleSync.contactMaxPushAcceleration)
         };
 
+        /// <summary>砲塔・武器。武器の同期の Udon が受ける。</summary>
+        public static readonly IReadOnlyList<string> WeaponNames = new[]
+        {
+            nameof(YakimaTankWeaponSync.turretTurnRate),
+            nameof(YakimaTankWeaponSync.gunTurnRate),
+            nameof(YakimaTankWeaponSync.gunPitchMin),
+            nameof(YakimaTankWeaponSync.gunPitchMax),
+            nameof(YakimaTankWeaponSync.shellSpeed),
+            nameof(YakimaTankWeaponSync.shellGravity),
+            nameof(YakimaTankWeaponSync.shellLifetime),
+            nameof(YakimaTankWeaponSync.reloadTime)
+        };
+
         /// <summary>値を受ける Udon の型と、その型が受ける名前の組。1 つの型が複数の組を受けることがある（同期の Udon は同期と接触）。</summary>
         public static readonly IReadOnlyList<KeyValuePair<Type, IReadOnlyList<string>>> Groups = new[]
         {
@@ -67,7 +80,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankSeat), SeatNames),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVRInput), VRInputNames),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), SyncNames),
-            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), ContactNames)
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), ContactNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankWeaponSync), WeaponNames)
         };
 
         /// <summary>値を受ける Udon の型（重ならない）。</summary>

@@ -69,6 +69,17 @@ namespace Yakimannzyuu.YakimaTank.Editor
         /// 前後・左右をモデル全体にしないのは、砲身などで張り出した箱の中に立つと、Interact の光線が判定に当たらず車体のコライダーで止まるため。
         /// 面を車体のコライダーと重ねないのは、光線が同じ距離で両方に当たると、どちらが先かが決まらないため。
         /// </summary>
+        /// <summary>
+        /// 砲塔の下にメッシュがないときの砲塔の命中用のトリガー（ルートの座標）。前後・左右は車体のコライダー、
+        /// 下は車体のコライダーの下端、上はモデル全体と車体のコライダーの上端の高い方。
+        /// </summary>
+        public static Bounds UpperHitboxBounds(Bounds bodyCollider, Bounds model)
+        {
+            var bounds = new Bounds();
+            bounds.SetMinMax(bodyCollider.min, new Vector3(bodyCollider.max.x, Mathf.Max(bodyCollider.max.y, model.max.y), bodyCollider.max.z));
+            return bounds;
+        }
+
         public static Bounds BoardingAreaBounds(Bounds bodyCollider, Bounds model)
         {
             var result = new Bounds();

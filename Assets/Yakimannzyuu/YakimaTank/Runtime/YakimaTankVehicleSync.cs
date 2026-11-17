@@ -111,6 +111,9 @@ namespace Yakimannzyuu.YakimaTank
         public int rejectedCount;
         public YakimaTankVehicleRegistry registry;
 
+        /// <summary>シーンの車両の一覧の中の番号。一覧がなければ -1。</summary>
+        public int vehicleIndex = -1;
+
         /// <summary>デバッグ UI：直前の物理の更新で重なっていた相手の数と、状態が古くて打ち切った相手の数（オーナーだけ）。</summary>
         public int contactCount;
         public int contactCutoffCount;
@@ -219,10 +222,11 @@ namespace Yakimannzyuu.YakimaTank
             }
         }
 
-        /// <summary>シーンの車両の一覧が、始まるときに自分を知らせる。</summary>
-        public void _SetRegistry(YakimaTankVehicleRegistry value)
+        /// <summary>シーンの車両の一覧が、始まるときに自分と、一覧の中の番号（シーンの中の車両の番号。どのクライアントでも同じ）を知らせる。</summary>
+        public void _SetRegistry(YakimaTankVehicleRegistry value, int index)
         {
             registry = value;
+            vehicleIndex = index;
             if (isOwnerMode)
             {
                 _ApplyIgnores();

@@ -89,5 +89,18 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(YakimaTankSetupMath.BoardingAreaBounds(body, lowModel).max.y, Is.EqualTo(1.3f + margin).Within(1e-5f),
                 "モデルが車体のコライダーより低くても、車体のコライダーの上端より外");
         }
+
+        [Test]
+        public void 砲塔にメッシュがないときの命中用のトリガーは前後と左右が車体のコライダーで上端がモデル全体の上端()
+        {
+            var body = new Bounds(new Vector3(0f, 0.85f, 0f), new Vector3(2f, 0.9f, 4f));
+            var model = new Bounds(new Vector3(0f, 1.2f, 0.4f), new Vector3(2.4f, 2.4f, 5f));
+            Bounds upper = YakimaTankSetupMath.UpperHitboxBounds(body, model);
+            Assert.That(Vector3.Distance(upper.min, body.min), Is.LessThan(1e-5f));
+            Assert.That(Vector3.Distance(upper.max, new Vector3(body.max.x, model.max.y, body.max.z)), Is.LessThan(1e-5f));
+
+            var low = new Bounds(new Vector3(0f, 0.5f, 0f), new Vector3(2f, 1f, 4f));
+            Assert.That(YakimaTankSetupMath.UpperHitboxBounds(body, low).max.y, Is.EqualTo(body.max.y).Within(1e-5f), "モデルが車体のコライダーより低くても、車体の箱より小さくしない");
+        }
     }
 }

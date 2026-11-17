@@ -7,7 +7,9 @@ namespace Yakimannzyuu.YakimaTank
 {
     /// <summary>
     /// 座席。VRCStation の出入りで、乗車の判定と入力を切り替え、降りたら共通操作値と車両の入力を初期値に戻す。
-    /// 自分が座ったら車両の所有権を取り、オーナーになってから入力を有効にする。
+    /// 自分が座ったら車体（ルート）と武器（Weapon）の両方の所有権を取り、両方そろってから入力を有効にする。
+    /// 座席は車体の下にあり、砲塔の下の位置の参照に、位置だけ毎フレーム合わせる（向きは車体のまま）。
+    /// 砲塔の子にしない。砲塔と一緒に回ると、車体から見た頭と手の入力に回転が返り、回り続けるため。
     /// 同期変数は持たない。NoVariableSync にするのは、座席の出入りを VRChat がほかの人へ伝えるために、
     /// VRCStation のある GameObject をネットワークの対象にしておくため。
     /// </summary>
@@ -20,7 +22,7 @@ namespace Yakimannzyuu.YakimaTank
         public const float OwnershipTimeout = 3f;
 
         [Header("座席（Play 中に再適用できる）")]
-        [Tooltip("自動の位置から、車体から見た向きでずらす量（m）")]
+        [Tooltip("自動の位置（砲塔の範囲の上面の中央）から、砲塔から見た向きでずらす量（m）。砲塔が回ると、ずらした位置も一緒に回る")]
         public Vector3 seatOffset;
 
         [Header("生成で決まる値")]
@@ -31,9 +33,10 @@ namespace Yakimannzyuu.YakimaTank
         public YakimaTankDesktopInput desktopInput;
         public YakimaTankVRInput vrInput;
         public YakimaTankVehicleSync sync;
+        public YakimaTankWeaponSync weapon;
 
-        /// <summary>自動の位置（砲塔の範囲の上面の中央）。親（砲塔）の座標。</summary>
-        public Vector3 basePosition;
+        /// <summary>座席の位置の参照（砲塔の下。自動の位置にあり、砲塔が左右 0 度のとき向きは車体と同じ）。</summary>
+        public Transform seatAnchor;
 
         [Header("状態（実行中に変わる）")]
         public int occupantId = NoPlayer;
@@ -54,15 +57,27 @@ namespace Yakimannzyuu.YakimaTank
             _ApplySeatOffset();
         }
 
+        private void LateUpdate()
+        {
+            _ApplySeatOffset();
+        }
+
         /// <summary>
-        /// ずらしは localPosition に足さない。親（砲塔）に拡大縮小があると、ずらしが m にならないため。
-        /// 座席の向きは車体にそろえてあるので、向きを掛けたずらしは車体から見た向きになる。
+        /// 位置の参照に、ずらしを足した所へ置く。武器が砲塔を回した後（LateUpdate）に呼ぶ。
+        /// ずらしは TransformPoint で求めない。参照の親（砲塔）に拡大縮小があると、ずらしが m にならないため。
         /// </summary>
         public void _ApplySeatOffset()
         {
-            Transform parent = transform.parent;
-            Vector3 origin = Utilities.IsValid(parent) ? parent.TransformPoint(basePosition) : basePosition;
-            transform.position = origin + transform.rotation * seatOffset;
+            if (Utilities.IsValid(seatAnchor))
+            {
+                transform.position = seatAnchor.position + seatAnchor.rotation * seatOffset;
+            }
+        }
+
+        /// <summary>車体と武器の両方の所有権を持っているか。</summary>
+        private bool _OwnsBoth()
+        {
+            return (!Utilities.IsValid(sync) || sync.isOwnerMode) && (!Utilities.IsValid(weapon) || weapon.isOwnerMode);
         }
 
         /// <summary>乗車の判定から呼ぶ。空いていれば自分を座らせる。</summary>
@@ -95,15 +110,25 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             localSeated = true;
-            if (!Utilities.IsValid(sync) || sync.isOwnerMode)
+            if (_OwnsBoth())
             {
                 _ActivateDriver();
                 return;
             }
 
+            // 2 つの所有権の移動は同時に終わるとは限らないので、両方そろうまで入力を有効にしない。待ちは 1 つで足りる。
             waitingOwnership = true;
             ownershipWaits++;
-            Networking.SetOwner(player, sync.gameObject);
+            if (Utilities.IsValid(sync) && !sync.isOwnerMode)
+            {
+                Networking.SetOwner(player, sync.gameObject);
+            }
+
+            if (Utilities.IsValid(weapon) && !weapon.isOwnerMode)
+            {
+                Networking.SetOwner(player, weapon.gameObject);
+            }
+
             SendCustomEventDelayedSeconds(nameof(_CheckOwnershipTimeout), OwnershipTimeout);
         }
 
@@ -113,6 +138,11 @@ namespace Yakimannzyuu.YakimaTank
             bool vr = Networking.LocalPlayer.IsUserInVR();
             desktopInput._SetActive(!vr);
             vrInput._SetActive(vr);
+            if (Utilities.IsValid(weapon))
+            {
+                weapon._SetAimByRate(vr);
+            }
+
             vehicle._SetLocalDriver(true);
             if (Utilities.IsValid(sync))
             {
@@ -120,7 +150,11 @@ namespace Yakimannzyuu.YakimaTank
             }
         }
 
-        /// <summary>同期の Udon が、所有権が移ったときに呼ぶ。待っていた所有権が来たら入力を有効にし、ほかの人へ移ったら降ろす。</summary>
+        /// <summary>
+        /// 車体と武器の同期の Udon が、所有権が移ったときに呼ぶ。両方そろったら入力を有効にし、運転中にどちらかがほかの人へ移ったら降ろす。
+        /// 待つ間は、片方だけ来ても降ろさない。もう片方がまだ移っていないのか、ほかの人へ移ったのかを、通知だけでは見分けられないため。
+        /// 取り合いで来なかったときは、待ちの時間切れ（3 秒）で降ろす。
+        /// </summary>
         public void _OnOwnerChanged()
         {
             if (!localSeated)
@@ -128,14 +162,14 @@ namespace Yakimannzyuu.YakimaTank
                 return;
             }
 
-            if (sync.isOwnerMode)
+            if (_OwnsBoth())
             {
                 if (waitingOwnership)
                 {
                     _ActivateDriver();
                 }
             }
-            else
+            else if (!waitingOwnership)
             {
                 _ForceExit();
             }

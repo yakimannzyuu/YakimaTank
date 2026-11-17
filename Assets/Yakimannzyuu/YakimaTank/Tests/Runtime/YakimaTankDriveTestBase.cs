@@ -412,8 +412,8 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Assert.That(vr.GetProgramVariable(nameof(YakimaTankVRInput.maxTwistAngle)), Is.EqualTo(30f));
             Assert.That(vr.GetProgramVariable(nameof(YakimaTankVRInput.deadzone)), Is.EqualTo(0.2f));
             Transform seatTransform = seat.transform;
-            var basePosition = (Vector3)seat.GetProgramVariable(nameof(YakimaTankSeat.basePosition));
-            Vector3 expected = seatTransform.parent.TransformPoint(basePosition) + seatTransform.rotation * offset;
+            var anchor = (Transform)seat.GetProgramVariable(nameof(YakimaTankSeat.seatAnchor));
+            Vector3 expected = anchor.position + anchor.rotation * offset;
             Assert.That(Vector3.Distance(seatTransform.position, expected), Is.LessThan(1e-3f), "座席がずらした所にない");
         }
 

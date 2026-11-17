@@ -9,7 +9,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
     [CreateAssetMenu(fileName = "YakimaTankSetup", menuName = "YakimaTank/Setup Settings")]
     public sealed class YakimaTankSetupSettings : ScriptableObject, ISerializationCallbackReceiver
     {
-        public const int CurrentSchemaVersion = 4;
+        public const int CurrentSchemaVersion = 5;
 
         public int schemaVersion = CurrentSchemaVersion;
 
@@ -24,10 +24,10 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public Transform[] leftWheels = new Transform[0];
         public Transform[] rightWheels = new Transform[0];
 
-        [Tooltip("座席を置く。なければ車体に置く。砲塔の操作はまだない")]
+        [Tooltip("左右に回す。座席はこの上に付いて行く")]
         public Transform turret;
 
-        [Tooltip("記録だけ。砲身の操作はまだない")]
+        [Tooltip("上下に回す。砲塔の下（子孫）にあること。前の端が砲口")]
         public Transform barrel;
 
         [Header("走行（Play 中に再適用できる）")]
@@ -78,6 +78,31 @@ namespace Yakimannzyuu.YakimaTank.Editor
         [Tooltip("押し返す加速の上限（m/s²、0 以上）。停止中のブレーキの減速より大きいと、無人の車両を押せる")]
         public float contactMaxPushAcceleration = 5f;
 
+        [Header("砲塔・武器（Play 中に再適用できる）")]
+        [Tooltip("砲塔の回る速さ（度/秒、0 より大きい）")]
+        public float turretTurnRate = 30f;
+
+        [Tooltip("砲身の回る速さ（度/秒、0 より大きい）")]
+        public float gunTurnRate = 15f;
+
+        [Tooltip("砲身の上下の下限（度、上が正。-90〜0）")]
+        public float gunPitchMin = -10f;
+
+        [Tooltip("砲身の上下の上限（度、上が正。0〜90）")]
+        public float gunPitchMax = 20f;
+
+        [Tooltip("弾速（m/s、0 より大きい）")]
+        public float shellSpeed = 200f;
+
+        [Tooltip("砲弾に掛かる重力（m/s²、0 以上）")]
+        public float shellGravity = 9.81f;
+
+        [Tooltip("砲弾の寿命（秒、0 より大きい）")]
+        public float shellLifetime = 3f;
+
+        [Tooltip("装填の時間（秒）。同期の送る間隔より長くする")]
+        public float reloadTime = 3f;
+
         [Header("足回り（生成で反映）")]
         [Tooltip("0 なら転輪のメッシュから求める")]
         public float wheelRadius;
@@ -115,7 +140,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         }
 
         /// <summary>
-        /// 版 1 → 2（座席と VR の項目）、版 2 → 3（同期の項目）、版 3 → 4（接触の項目）：足した項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
+        /// 版 1 → 2（座席と VR の項目）、版 2 → 3（同期の項目）、版 3 → 4（接触の項目）、版 4 → 5（砲塔・武器の項目）：足した項目は、古いアセットに値がないので、読み込みで初期化子の既定値のまま残る。
         /// 前からある値と参照は名前を変えていないので、そのまま読める。版だけを上げればよい。今より新しい版は変えない（検証で Error）。
         /// </summary>
         public static int Migrate(int version)

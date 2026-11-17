@@ -18,7 +18,7 @@ namespace Yakimannzyuu.YakimaTank
             {
                 if (Utilities.IsValid(vehicles[index]))
                 {
-                    vehicles[index]._SetRegistry(this);
+                    vehicles[index]._SetRegistry(this, index);
                 }
             }
         }

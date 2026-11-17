@@ -43,6 +43,22 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public const string ControlsName = "Controls";
         public const string BoardingName = "Boarding";
         public const string SeatName = "Seat";
+        public const string SeatAnchorName = "SeatAnchor";
+        public const string WeaponName = "Weapon";
+        public const string MuzzleName = "YakimaTankMuzzle";
+
+        /// <summary>砲身の下で、名前にこれを含む GameObject を、元のモデルの砲口の印として探す（大文字と小文字は区別しない）。</summary>
+        public const string MuzzleMarker = "Muzzle";
+        public const string ShellsName = "Shells";
+        public const string HitboxName = "Hitbox";
+        public const string TurretHitboxName = "TurretHitbox";
+        public const string ShellMaterialName = "YakimaTankShell.mat";
+
+        /// <summary>使い回す砲弾の数。装填の時間（既定 3 秒）と寿命（既定 3 秒）なら、自分の発射と受けた発射が重なっても足りる。</summary>
+        public const int ShellCount = 4;
+
+        /// <summary>見た目の砲弾の球の直径（m）。</summary>
+        public const float ShellSize = 0.2f;
         public const string BoardingText = "Ride";
         public const float WheelTargetPosition = 0.5f;
 
@@ -239,8 +255,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
             body.interpolation = RigidbodyInterpolation.Interpolate;
             Record("Rigidbody", bodyCreated);
 
-            // 座席は元のモデルの砲塔の子に置く。モデルを差し替えると古いモデルと一緒に消えるので、先にルートへ避けておき、
-            // シーンからの参照と中のオブジェクトを保つ。
+            // 座席はルートの下に置く。0.4.0 までは元のモデルの砲塔の子だったので、先にルートへ移しておく。
+            // モデルを差し替えると古いモデルと一緒に消えるため。シーンからの参照と中のオブジェクトを保つ。
             YakimaTankSeat existingSeat = FindProxy<YakimaTankSeat>(root, true);
             if (existingSeat != null)
             {
@@ -370,13 +386,19 @@ namespace Yakimannzyuu.YakimaTank.Editor
             YakimaTankBoarding boarding = FindOrAdd<YakimaTankBoarding>(boardingTransform.gameObject, out bool boardingUdonCreated);
             Record(BoardingName, boardingCreated || boardingUdonCreated);
 
-            Transform seatParent = turret != null ? turret : Resolve(settings.body);
+            // 座席は車体（ルート）の下に置き、砲塔の下の位置の参照に付いて行かせる（仕様書 0.5.0 の 1.1）。
+            // 砲塔の子にしない。砲塔と一緒に回ると、車体から見た頭と手の入力に回転が返り、回り続けるため。
             bool seatCreated = existingSeat == null;
-            Transform seatTransform = seatCreated ? CreateChild(seatParent, SeatName).transform : existingSeat.transform;
-            seatTransform.SetParent(seatParent, false);
+            Transform seatTransform = seatCreated ? CreateChild(root.transform, SeatName).transform : existingSeat.transform;
+            seatTransform.SetParent(root.transform, false);
             seatTransform.name = SeatName;
-            seatTransform.rotation = root.transform.rotation;
+            seatTransform.localRotation = Quaternion.identity;
             seatTransform.localScale = Vector3.one;
+            Transform anchor = EnsureChild(turret, SeatAnchorName, out bool anchorCreated);
+            anchor.localPosition = SeatBasePosition(turret, root.transform, barrel);
+            anchor.rotation = root.transform.rotation;
+            anchor.localScale = Vector3.one;
+            Record(SeatAnchorName, anchorCreated);
             VRCStation station = seatTransform.GetComponent<VRCStation>();
             if (station == null)
             {
@@ -396,9 +418,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
             seat.control = control;
             seat.desktopInput = desktop;
             seat.vrInput = vr;
-            seat.basePosition = SeatBasePosition(seatParent, root.transform, barrel);
+            seat.seatAnchor = anchor;
             YakimaTankRuntimeValues.WriteToProxy(settings, seat);
-            seatTransform.position = seatParent.TransformPoint(seat.basePosition) + seatTransform.rotation * settings.seatOffset;
+            seatTransform.position = anchor.position + anchor.rotation * settings.seatOffset;
             Record(SeatName, seatCreated);
 
             boarding.seat = seat;
@@ -423,13 +445,206 @@ namespace Yakimannzyuu.YakimaTank.Editor
             seat.sync = sync;
             Record(nameof(YakimaTankVehicleSync), syncCreated);
 
-            foreach (UdonSharpBehaviour proxy in new UdonSharpBehaviour[] { vehicle, sync, control, desktop, vr, boarding, seat })
+            YakimaTankWeaponSync weapon = BuildWeapon(settings, root.transform, turret, barrel, sync, seat, control, Record, out YakimaTankShell[] shells);
+            seat.weapon = weapon;
+            YakimaTankHitbox[] hitboxes = BuildHitboxes(root.transform, turret, barrel, box, modelBounds, sync, Record);
+
+            foreach (UdonSharpBehaviour proxy in new UdonSharpBehaviour[] { vehicle, sync, control, desktop, vr, boarding, seat, weapon }.Concat(shells).Concat(hitboxes))
             {
                 UdonSharpEditorUtility.CopyProxyToUdon(proxy);
                 ApplySyncMethod(proxy);
             }
 
             UdonSharpEditorUtility.GetBackingUdonBehaviour(boarding).interactText = BoardingText;
+        }
+
+        /// <summary>
+        /// 武器の領域（ルートの子の Weapon）。所有権を車体と分けるため、ルートとは別の GameObject に置く（仕様書 0.5.0 の 1.1）。
+        /// 砲塔の左右の軸と砲身の上下の軸は、車体の上と右の向きを、それぞれの親から見た向きにして解く（元のモデルは変えない）。
+        /// </summary>
+        private static YakimaTankWeaponSync BuildWeapon(YakimaTankSetupSettings settings, Transform root, Transform turret, Transform barrel,
+            YakimaTankVehicleSync sync, YakimaTankSeat seat, YakimaTankControlState control, Action<string, bool> record, out YakimaTankShell[] shells)
+        {
+            Transform weaponTransform = EnsureChild(root, WeaponName, out bool weaponObjectCreated);
+            weaponTransform.localPosition = Vector3.zero;
+            weaponTransform.localRotation = Quaternion.identity;
+            weaponTransform.localScale = Vector3.one;
+            YakimaTankWeaponSync weapon = FindOrAdd<YakimaTankWeaponSync>(weaponTransform.gameObject, out bool weaponCreated);
+            record(WeaponName, weaponObjectCreated || weaponCreated);
+
+            Transform muzzle = EnsureChild(barrel, MuzzleName, out bool muzzleCreated);
+            muzzle.position = MuzzlePosition(barrel, root);
+            muzzle.rotation = root.rotation;
+            muzzle.localScale = Vector3.one;
+            record(MuzzleName, muzzleCreated);
+
+            weapon.vehicleSync = sync;
+            weapon.seat = seat;
+            weapon.control = control;
+            weapon.turret = turret;
+            weapon.barrel = barrel;
+            weapon.muzzle = muzzle;
+            weapon.turretAxis = turret.parent.InverseTransformDirection(root.up).normalized;
+            weapon.turretBaseRotation = turret.localRotation;
+            weapon.barrelAxis = barrel.parent.InverseTransformDirection(root.right).normalized;
+            weapon.barrelBaseRotation = barrel.localRotation;
+            weapon.shellMask = ShellMask();
+            YakimaTankRuntimeValues.WriteToProxy(settings, weapon);
+
+            Transform container = EnsureChild(weaponTransform, ShellsName, out _);
+            Material material = EnsureShellMaterial(settings.outputPrefabPath);
+            Mesh sphere = Resources.GetBuiltinResource<Mesh>("Sphere.fbx");
+            shells = new YakimaTankShell[ShellCount];
+            for (int index = 0; index < ShellCount; index++)
+            {
+                Transform shellTransform = EnsureChild(container, "Shell" + index, out bool shellCreated);
+                shellTransform.localPosition = Vector3.zero;
+                shellTransform.localRotation = Quaternion.identity;
+                shellTransform.localScale = Vector3.one * ShellSize;
+                MeshFilter filter = shellTransform.GetComponent<MeshFilter>();
+                if (filter == null)
+                {
+                    filter = shellTransform.gameObject.AddComponent<MeshFilter>();
+                }
+
+                filter.sharedMesh = sphere;
+                MeshRenderer renderer = shellTransform.GetComponent<MeshRenderer>();
+                if (renderer == null)
+                {
+                    renderer = shellTransform.gameObject.AddComponent<MeshRenderer>();
+                }
+
+                renderer.sharedMaterial = material;
+                renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+                renderer.enabled = false;
+                YakimaTankShell shell = FindOrAdd<YakimaTankShell>(shellTransform.gameObject, out bool shellUdonCreated);
+                shell.weapon = weapon;
+                shell.shellRenderer = renderer;
+                shells[index] = shell;
+                record(WeaponName + "/" + ShellsName + "/" + shellTransform.name, shellCreated || shellUdonCreated);
+            }
+
+            weapon.shells = shells;
+            return weapon;
+        }
+
+        /// <summary>
+        /// 元のモデルの砲口の印（砲身の下で、名前に Muzzle を含む GameObject）。生成が置く砲口は除く。なければ null。
+        /// ボーンで砲身を回すモデルは、メッシュが砲身の下にないので、この印で砲口を決める（仕様書 0.5.0 の 1.9）。
+        /// </summary>
+        public static Transform FindMuzzleMarker(Transform barrel)
+        {
+            return barrel == null
+                ? null
+                : barrel.GetComponentsInChildren<Transform>(true).FirstOrDefault(t =>
+                    t != barrel && t.name != MuzzleName && t.name.IndexOf(MuzzleMarker, StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        /// <summary>砲口の位置。砲口の印があればその位置、なければ砲身のメッシュの範囲の前の端（車体の前の向き）。どちらもなければ失敗。</summary>
+        private static Vector3 MuzzlePosition(Transform barrel, Transform root)
+        {
+            Transform marker = FindMuzzleMarker(barrel);
+            if (marker != null)
+            {
+                return marker.position;
+            }
+
+            if (!YakimaTankBounds.TryGetLocalBounds(barrel, root, out Bounds bounds))
+            {
+                throw new InvalidOperationException("砲身にメッシュも砲口の印もないので、砲口の位置を決められません。");
+            }
+
+            return root.TransformPoint(new Vector3(bounds.center.x, bounds.center.y, bounds.max.z));
+        }
+
+        /// <summary>
+        /// 命中用のトリガー（仕様書 0.5.0 の 1.7）。車体の箱（ルートの下、車体のコライダーと同じ大きさ）と、砲塔の箱（砲塔の下、砲身を除く砲塔のメッシュの範囲）。
+        /// 乗車の判定の箱は使い回さない。車体の幅のまま砲塔の高さまである箱なので、砲塔の横の空間に当たるため。
+        /// ただし砲塔の下にメッシュがない（ボーンで回す）モデルは、砲塔の形が分からないので、車体の箱の前後・左右のまま、
+        /// 高さをモデル全体の上端まで伸ばした箱をルートの下に置く（回さない）。
+        /// </summary>
+        private static YakimaTankHitbox[] BuildHitboxes(Transform root, Transform turret, Transform barrel, Bounds bodyBox, Bounds modelBounds, YakimaTankVehicleSync sync,
+            Action<string, bool> record)
+        {
+            YakimaTankHitbox turretHitbox;
+            if (YakimaTankBounds.TryGetOwnBounds(turret, turret, out Bounds turretBounds, barrel))
+            {
+                RemoveChild(root, TurretHitboxName);
+                turretHitbox = Hitbox(turret, TurretHitboxName, turretBounds, sync, record);
+            }
+            else
+            {
+                RemoveChild(turret, TurretHitboxName);
+                turretHitbox = Hitbox(root, TurretHitboxName, YakimaTankSetupMath.UpperHitboxBounds(bodyBox, modelBounds), sync, record);
+            }
+
+            return new[] { Hitbox(root, HitboxName, bodyBox, sync, record), turretHitbox };
+        }
+
+        /// <summary>砲塔の箱の置き場所が変わったとき（モデルを差し替えたとき）に、前の箱を残さない。</summary>
+        private static void RemoveChild(Transform parent, string name)
+        {
+            foreach (Transform child in parent.Cast<Transform>().Where(t => t.name == name && !PrefabUtility.IsPartOfPrefabInstance(t)).ToList())
+            {
+                Object.DestroyImmediate(child.gameObject);
+            }
+        }
+
+        private static YakimaTankHitbox Hitbox(Transform parent, string name, Bounds bounds, YakimaTankVehicleSync sync, Action<string, bool> record)
+        {
+            Transform hitboxTransform = EnsureChild(parent, name, out bool created);
+            hitboxTransform.localPosition = Vector3.zero;
+            hitboxTransform.localRotation = Quaternion.identity;
+            hitboxTransform.localScale = Vector3.one;
+            hitboxTransform.gameObject.layer = DefaultLayer;
+            BoxCollider collider = hitboxTransform.GetComponent<BoxCollider>();
+            if (collider == null)
+            {
+                collider = hitboxTransform.gameObject.AddComponent<BoxCollider>();
+            }
+
+            collider.isTrigger = true;
+            collider.enabled = true;
+            collider.center = bounds.center;
+            collider.size = bounds.size;
+            YakimaTankHitbox hitbox = FindOrAdd<YakimaTankHitbox>(hitboxTransform.gameObject, out bool udonCreated);
+            hitbox.vehicle = sync;
+            record(name, created || udonCreated);
+            return hitbox;
+        }
+
+        /// <summary>砲弾の光線のレイヤー。車両の物理の形（Walkthrough）とプレイヤーは見ない（画面によって有効・無効が違い、当たり方が変わるため）。</summary>
+        internal static int ShellMask()
+        {
+            int mask = Physics.DefaultRaycastLayers;
+            foreach (string name in new[] { YakimaTankSetupValidator.WalkthroughLayer, "Player", "PlayerLocal", "MirrorReflection" })
+            {
+                int layer = YakimaTankSetupValidator.FindLayer(name);
+                if (layer >= 0)
+                {
+                    mask &= ~(1 << layer);
+                }
+            }
+
+            return mask;
+        }
+
+        /// <summary>見た目の砲弾の材質。パッケージは書けないことがある（VCC や git URL で入れると読むだけ）ので、出力先のフォルダに作る。</summary>
+        private static Material EnsureShellMaterial(string outputPrefabPath)
+        {
+            string folder = Path.GetDirectoryName(outputPrefabPath)?.Replace(Path.DirectorySeparatorChar, '/');
+            string path = folder + "/" + ShellMaterialName;
+            var material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material != null)
+            {
+                return material;
+            }
+
+            EnsureFolder(folder);
+            material = new Material(Shader.Find("Unlit/Color")) { color = new Color(1f, 0.75f, 0.2f) };
+            AssetDatabase.CreateAsset(material, path);
+            return material;
         }
 
         /// <summary>
@@ -666,25 +881,28 @@ namespace Yakimannzyuu.YakimaTank.Editor
             collider.sidewaysFriction = sideways;
         }
 
-        /// <summary>生成が足す U# の部品。どれも生成 Prefab の中に 1 つだけ。</summary>
-        private static readonly Type[] GeneratedBehaviours =
+        /// <summary>生成が足す U# の部品と、生成 Prefab の中の数。</summary>
+        private static readonly KeyValuePair<Type, int>[] GeneratedBehaviours =
         {
-            typeof(YakimaTankVehicle),
-            typeof(YakimaTankVehicleSync),
-            typeof(YakimaTankControlState),
-            typeof(YakimaTankDesktopInput),
-            typeof(YakimaTankVRInput),
-            typeof(YakimaTankBoarding),
-            typeof(YakimaTankSeat)
+            new KeyValuePair<Type, int>(typeof(YakimaTankVehicle), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankVehicleSync), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankControlState), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankDesktopInput), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankVRInput), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankBoarding), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankSeat), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankWeaponSync), 1),
+            new KeyValuePair<Type, int>(typeof(YakimaTankShell), ShellCount),
+            new KeyValuePair<Type, int>(typeof(YakimaTankHitbox), 2)
         };
 
         private static void Inspect(YakimaTankSetupSettings settings, GameObject root)
         {
             Require(root.GetComponentsInChildren<Rigidbody>(true).Length == 1, "Rigidbody はルートに 1 つだけのはずです。");
-            foreach (Type type in GeneratedBehaviours)
+            foreach (KeyValuePair<Type, int> generated in GeneratedBehaviours)
             {
-                Require(root.GetComponentsInChildren<UdonBehaviour>(true).Count(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == type) == 1,
-                    $"{type.Name} の Udon は 1 つだけのはずです。");
+                Require(root.GetComponentsInChildren<UdonBehaviour>(true).Count(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == generated.Key) == generated.Value,
+                    $"{generated.Key.Name} の Udon は {generated.Value} つのはずです。");
             }
 
             Require(root.transform.Cast<Transform>().Count(t => t.name == ModelName && PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)) == 1, "元のモデルの入れ子の Prefab は 1 つだけのはずです。");
@@ -698,6 +916,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Require(seat.station != null && seat.boarding != null && seat.vehicle == vehicle && seat.control != null && seat.desktopInput != null && seat.vrInput != null,
                 "座席の参照が欠けています。");
             Require(vehicle.control != null && vehicle.control == seat.control, "車両の共通操作値の参照が欠けています。");
+            Require(seat.transform.parent == root.transform, "座席がルートの下にありません。");
+            Transform turret = settings.turret == null ? null : seat.seatAnchor == null ? null : seat.seatAnchor.parent;
+            Require(turret != null && turret.name == settings.turret.name && seat.seatAnchor.name == SeatAnchorName, "座席の位置の参照が砲塔の下にありません。");
             YakimaTankVehicleSync sync = FindProxy<YakimaTankVehicleSync>(root, false);
             Require(sync != null && sync.vehicle == vehicle && sync.seat == seat && sync.body == root.GetComponent<Rigidbody>() && vehicle.sync == sync && seat.sync == sync,
                 "同期の Udon の参照が欠けています。");
@@ -708,6 +929,23 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Require(box != null && sync.bodyCollider == box, "同期の Udon の、接触に使う車体のコライダーの参照が欠けています。");
             Require(seat.boarding.seat == seat && seat.boarding.area != null && seat.boarding.area.isTrigger && seat.boarding.area.gameObject.layer == DefaultLayer,
                 "乗車の判定が、座席を指す Default のトリガーではありません。");
+
+            YakimaTankWeaponSync weapon = FindProxy<YakimaTankWeaponSync>(root, true);
+            Require(weapon.transform.parent == root.transform && weapon.name == WeaponName, "武器の同期の Udon が、ルートの子の Weapon にありません。");
+            Require(weapon.vehicleSync == sync && weapon.seat == seat && weapon.control == seat.control && weapon.turret == turret && seat.weapon == weapon &&
+                    weapon.barrel != null && weapon.barrel.IsChildOf(turret) && weapon.muzzle != null && weapon.muzzle.parent == weapon.barrel,
+                "武器の同期の Udon の参照が欠けています。");
+            Require(weapon.shells != null && weapon.shells.Length == ShellCount && weapon.shells.All(shell => shell != null && shell.weapon == weapon && shell.shellRenderer != null),
+                "武器の同期の Udon が、砲弾をそろえて持っていません。");
+            YakimaTankHitbox[] hitboxes = root.GetComponentsInChildren<UdonBehaviour>(true)
+                .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankHitbox))
+                .Select(b => (YakimaTankHitbox)UdonSharpEditorUtility.GetProxyBehaviour(b))
+                .ToArray();
+            Require(hitboxes.All(hitbox => hitbox.vehicle == sync && hitbox.GetComponent<BoxCollider>() is BoxCollider area && area.isTrigger && area.enabled &&
+                                           hitbox.gameObject.layer == DefaultLayer) &&
+                    hitboxes.Any(hitbox => hitbox.transform.parent == root.transform && hitbox.name == HitboxName) &&
+                    hitboxes.Any(hitbox => (hitbox.transform.parent == turret || hitbox.transform.parent == root.transform) && hitbox.name == TurretHitboxName),
+                "命中用のトリガーが、車体と砲塔の Default のトリガーで車体の同期の Udon を指していません。");
 
             int walkthrough = YakimaTankSetupValidator.FindLayer(YakimaTankSetupValidator.WalkthroughLayer);
             Transform bodyCollider = root.transform.Find(CollidersName + "/" + BodyColliderName);
@@ -722,7 +960,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
             Require(prefab != null, "保存した Prefab を読めません: " + path);
-            foreach (Type type in GeneratedBehaviours)
+            foreach (Type type in GeneratedBehaviours.Select(generated => generated.Key))
             {
                 UdonBehaviour saved = SavedUdon(prefab, type);
                 Require(saved != null && saved.programSource != null, $"保存した Prefab に {type.Name} の Udon がありません。");
@@ -741,6 +979,23 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             Require(HasReference(seat, nameof(YakimaTankSeat.sync)), "保存した Prefab の座席の Udon に同期の Udon の参照が入っていません。");
+            Require(HasReference(seat, nameof(YakimaTankSeat.weapon)) && HasReference(seat, nameof(YakimaTankSeat.seatAnchor)),
+                "保存した Prefab の座席の Udon に武器の同期の Udon か位置の参照が入っていません。");
+            UdonBehaviour savedWeapon = SavedUdon(prefab, typeof(YakimaTankWeaponSync));
+            foreach (string name in new[]
+                     {
+                         nameof(YakimaTankWeaponSync.vehicleSync), nameof(YakimaTankWeaponSync.seat), nameof(YakimaTankWeaponSync.control),
+                         nameof(YakimaTankWeaponSync.turret), nameof(YakimaTankWeaponSync.barrel), nameof(YakimaTankWeaponSync.muzzle)
+                     })
+            {
+                Require(HasReference(savedWeapon, name), $"保存した Prefab の武器の同期の Udon に {name} の参照が入っていません。");
+            }
+
+            Require(savedWeapon.publicVariables.TryGetVariableValue(nameof(YakimaTankWeaponSync.shells), out object savedShells) &&
+                    savedShells is Array shellArray && shellArray.Length == ShellCount && shellArray.Cast<object>().All(shell => shell is Object reference && reference != null),
+                "保存した Prefab の武器の同期の Udon に砲弾の参照が入っていません。");
+            Require(savedWeapon.publicVariables.TryGetVariableValue(nameof(YakimaTankWeaponSync.reloadTime), out float reload) && Mathf.Approximately(reload, settings.reloadTime),
+                "保存した Prefab の武器の同期の Udon に装填の時間が入っていません。");
             UdonBehaviour savedSync = SavedUdon(prefab, typeof(YakimaTankVehicleSync));
             foreach (string name in new[]
                      {

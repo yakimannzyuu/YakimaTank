@@ -189,26 +189,168 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             return value as Object;
         }
 
+        private Transform Turret(GameObject prefab)
+        {
+            return prefab.transform.Find(YakimaTankSetupService.ModelName + "/" + TestWorkspace.TurretPath);
+        }
+
         [Test]
-        public void 座席は砲塔の子で砲塔の上面の中央にずらしを足した所に車体と同じ向きで置く()
+        public void 座席はルートの下で砲塔の下の位置の参照にずらしを足した所に車体と同じ向きで置く()
         {
             _settings.seatOffset = new Vector3(0.1f, 0.2f, -0.3f);
             GameObject prefab = GenerateOrFail();
-            Transform seat = Udon<YakimaTankSeat>(prefab).transform;
+            UdonBehaviour seatUdon = Udon<YakimaTankSeat>(prefab);
+            Transform seat = seatUdon.transform;
+            var anchor = (Transform)Reference(seatUdon, nameof(YakimaTankSeat.seatAnchor));
 
-            Assert.That(seat.parent, Is.SameAs(prefab.transform.Find(YakimaTankSetupService.ModelName + "/" + TestWorkspace.TurretPath)));
+            Assert.That(seat.parent, Is.SameAs(prefab.transform), "座席は砲塔と一緒に回らない");
+            Assert.That(anchor.parent, Is.SameAs(Turret(prefab)), "位置の参照は砲塔の下");
+            Assert.That(Vector3.Distance(prefab.transform.InverseTransformPoint(anchor.position), new Vector3(0f, TestWorkspace.TurretTop, 0f)), Is.LessThan(1e-3f),
+                "位置の参照は砲塔の上面の中央");
+            Assert.That(Quaternion.Angle(anchor.rotation, prefab.transform.rotation), Is.LessThan(0.01f), "位置の参照の向きは、砲塔が 0 度のとき車体と同じ");
             Vector3 expected = new Vector3(0f, TestWorkspace.TurretTop, 0f) + _settings.seatOffset;
             Assert.That(Vector3.Distance(prefab.transform.InverseTransformPoint(seat.position), expected), Is.LessThan(1e-3f));
             Assert.That(Quaternion.Angle(seat.rotation, prefab.transform.rotation), Is.LessThan(0.01f));
         }
 
         [Test]
-        public void 砲塔の対応がなければ座席は車体の子に置く()
+        public void 砲塔の対応がなければ生成しない()
         {
             _settings.turret = null;
+            SetupResult result = YakimaTankSetupService.Generate(_settings);
+
+            Assert.That(result.Succeeded, Is.False);
+            Assert.That(result.Diagnostics.Any(d => d.Severity == SetupSeverity.Error && d.Field == nameof(YakimaTankSetupSettings.turret)), Is.True);
+        }
+
+        [Test]
+        public void 武器の同期のUdonはルートの子のWeaponに1つでManualで砲塔と砲身と砲口と車体の同期と座席を指し座席からも指される()
+        {
+            GameObject prefab = GenerateOrFail();
+            UdonBehaviour weapon = Udon<YakimaTankWeaponSync>(prefab);
+            Transform turret = Turret(prefab);
+
+            Assert.That(weapon.transform.parent, Is.SameAs(prefab.transform), "ルートの子（車体とは別の所有権の領域）");
+            Assert.That(weapon.gameObject.name, Is.EqualTo(YakimaTankSetupService.WeaponName));
+            Assert.That(weapon.SyncMethod, Is.EqualTo(VRC.SDKBase.Networking.SyncType.Manual));
+            Assert.That(Reference(weapon, nameof(YakimaTankWeaponSync.vehicleSync)), Is.SameAs(Udon<YakimaTankVehicleSync>(prefab)));
+            Assert.That(Reference(weapon, nameof(YakimaTankWeaponSync.seat)), Is.SameAs(Udon<YakimaTankSeat>(prefab)));
+            Assert.That(Reference(weapon, nameof(YakimaTankWeaponSync.control)), Is.SameAs(Udon<YakimaTankControlState>(prefab)));
+            Assert.That(Reference(weapon, nameof(YakimaTankWeaponSync.turret)), Is.SameAs(turret));
+            Assert.That(Reference(weapon, nameof(YakimaTankWeaponSync.barrel)), Is.SameAs(turret.Find("Barrel")));
+            Assert.That(Reference(Udon<YakimaTankSeat>(prefab), nameof(YakimaTankSeat.weapon)), Is.SameAs(weapon));
+            Assert.That(Value<Vector3>(weapon, nameof(YakimaTankWeaponSync.turretAxis)), Is.EqualTo(Vector3.up), "砲塔の左右の軸は車体の上");
+            Assert.That(Value<Vector3>(weapon, nameof(YakimaTankWeaponSync.barrelAxis)), Is.EqualTo(Vector3.right), "砲身の上下の軸は車体の右");
+            Assert.That(Value<float>(weapon, nameof(YakimaTankWeaponSync.reloadTime)), Is.EqualTo(_settings.reloadTime));
+        }
+
+        [Test]
+        public void 砲口は砲身の前の端で車体の前を向く()
+        {
+            GameObject prefab = GenerateOrFail();
+            var muzzle = (Transform)Reference(Udon<YakimaTankWeaponSync>(prefab), nameof(YakimaTankWeaponSync.muzzle));
+
+            Assert.That(muzzle.parent, Is.SameAs(Turret(prefab).Find("Barrel")));
+            Vector3 position = prefab.transform.InverseTransformPoint(muzzle.position);
+            Assert.That(position.z, Is.EqualTo(TestWorkspace.BarrelFront).Within(1e-3f), "砲口の位置 " + position.ToString("F3"));
+            Assert.That(Quaternion.Angle(muzzle.rotation, prefab.transform.rotation), Is.LessThan(0.01f));
+        }
+
+        [Test]
+        public void 命中用のトリガーは車体と砲塔に1つずつのDefaultのトリガーで車体の同期を指し車体の箱は車体のコライダーと同じ大きさ()
+        {
+            GameObject prefab = GenerateOrFail();
+            UdonBehaviour[] hitboxes = prefab.GetComponentsInChildren<UdonBehaviour>(true)
+                .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankHitbox)).ToArray();
+            UdonBehaviour sync = Udon<YakimaTankVehicleSync>(prefab);
+
+            Assert.That(hitboxes, Has.Length.EqualTo(2));
+            Assert.That(hitboxes.Select(h => h.transform.parent), Is.EquivalentTo(new[] { prefab.transform, Turret(prefab) }));
+            foreach (UdonBehaviour hitbox in hitboxes)
+            {
+                var area = hitbox.GetComponent<BoxCollider>();
+                Assert.That(area.isTrigger && area.enabled, Is.True, hitbox.name);
+                Assert.That(hitbox.gameObject.layer, Is.EqualTo(0), hitbox.name + " は Default");
+                Assert.That(Reference(hitbox, nameof(YakimaTankHitbox.vehicle)), Is.SameAs(sync), hitbox.name);
+            }
+
+            var body = prefab.transform.Find(YakimaTankSetupService.CollidersName + "/" + YakimaTankSetupService.BodyColliderName).GetComponent<BoxCollider>();
+            var bodyHitbox = prefab.transform.Find(YakimaTankSetupService.HitboxName).GetComponent<BoxCollider>();
+            Assert.That(bodyHitbox.center, Is.EqualTo(body.center));
+            Assert.That(bodyHitbox.size, Is.EqualTo(body.size));
+            var turretHitbox = Turret(prefab).Find(YakimaTankSetupService.TurretHitboxName).GetComponent<BoxCollider>();
+            Assert.That(Vector3.Distance(turretHitbox.center, Vector3.zero), Is.LessThan(1e-3f), "砲身を除いた砲塔の箱");
+            Assert.That(Vector3.Distance(turretHitbox.size, Vector3.one), Is.LessThan(1e-3f), "砲塔の立方体（砲塔の座標）");
+        }
+
+        [Test]
+        public void 砲弾は武器の下に決まった数の見えない球で武器を指し出力先のフォルダの材質を使う()
+        {
+            GameObject prefab = GenerateOrFail();
+            UdonBehaviour weapon = Udon<YakimaTankWeaponSync>(prefab);
+            UdonBehaviour[] shells = prefab.GetComponentsInChildren<UdonBehaviour>(true)
+                .Where(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankShell)).ToArray();
+
+            Assert.That(shells, Has.Length.EqualTo(YakimaTankSetupService.ShellCount));
+            string material = System.IO.Path.GetDirectoryName(_settings.outputPrefabPath)?.Replace('\\', '/') + "/" + YakimaTankSetupService.ShellMaterialName;
+            foreach (UdonBehaviour shell in shells)
+            {
+                Assert.That(shell.transform.IsChildOf(weapon.transform), Is.True, shell.name);
+                Assert.That(Reference(shell, nameof(YakimaTankShell.weapon)), Is.SameAs(weapon));
+                Assert.That(shell.GetComponent<Collider>(), Is.Null, "砲弾に当たりはない（光線で見る）");
+                var renderer = shell.GetComponent<MeshRenderer>();
+                Assert.That(renderer.enabled, Is.False, "撃つまで見えない");
+                Assert.That(AssetDatabase.GetAssetPath(renderer.sharedMaterial), Is.EqualTo(material));
+            }
+
+        }
+
+        [Test]
+        public void 砲身の下に名前にMuzzleを含むGameObjectがあればその位置を砲口にする()
+        {
+            _settings = _workspace.CreateRiggedSettings(_workspace.CreateRiggedModel());
+            GameObject prefab = GenerateOrFail();
+            var muzzle = (Transform)Reference(Udon<YakimaTankWeaponSync>(prefab), nameof(YakimaTankWeaponSync.muzzle));
+
+            Vector3 position = prefab.transform.InverseTransformPoint(muzzle.position);
+            Assert.That(Vector3.Distance(position, new Vector3(0f, 1.5f, TestWorkspace.BarrelFront)), Is.LessThan(1e-3f), "砲口の位置 " + position.ToString("F3"));
+            Assert.That(muzzle.parent.name, Is.EqualTo("GunPivot"), "砲身と一緒に回る");
+            Assert.That(Quaternion.Angle(muzzle.rotation, prefab.transform.rotation), Is.LessThan(0.01f));
+        }
+
+        [Test]
+        public void 砲塔の下にメッシュがなければ砲塔の命中用のトリガーは車体の箱の前後と左右のままモデルの上端までの箱でルートの下に置く()
+        {
+            _settings = _workspace.CreateRiggedSettings(_workspace.CreateRiggedModel());
             GameObject prefab = GenerateOrFail();
 
-            Assert.That(Udon<YakimaTankSeat>(prefab).transform.parent, Is.SameAs(prefab.transform.Find(YakimaTankSetupService.ModelName + "/Hull")));
+            var body = prefab.transform.Find(YakimaTankSetupService.CollidersName + "/" + YakimaTankSetupService.BodyColliderName).GetComponent<BoxCollider>();
+            Transform upper = prefab.transform.Find(YakimaTankSetupService.TurretHitboxName);
+            Assert.That(upper, Is.Not.Null, "ルートの下にない");
+            var area = upper.GetComponent<BoxCollider>();
+            Bounds bounds = new Bounds(area.center, area.size);
+            Assert.That(bounds.min.x, Is.EqualTo(body.center.x - body.size.x * 0.5f).Within(1e-3f));
+            Assert.That(bounds.max.z, Is.EqualTo(body.center.z + body.size.z * 0.5f).Within(1e-3f));
+            Assert.That(bounds.min.y, Is.EqualTo(body.center.y - body.size.y * 0.5f).Within(1e-3f));
+            Assert.That(bounds.max.y, Is.EqualTo(TestWorkspace.TurretTop).Within(1e-3f), "モデルの上端まで");
+            Assert.That(area.isTrigger, Is.True);
+        }
+
+        [Test]
+        public void 前に砲塔の下に置いた座席も生成し直すとルートの下へ移り座席のオブジェクトを保つ()
+        {
+            GameObject first = GenerateOrFail();
+            long seatId = LocalId(Udon<YakimaTankSeat>(first).gameObject);
+            GameObject contents = PrefabUtility.LoadPrefabContents(_settings.outputPrefabPath);
+            Transform oldSeat = contents.GetComponentsInChildren<VRC.SDK3.Components.VRCStation>(true).Single().transform;
+            oldSeat.SetParent(contents.transform.Find(YakimaTankSetupService.ModelName + "/" + TestWorkspace.TurretPath), true);
+            PrefabUtility.SaveAsPrefabAsset(contents, _settings.outputPrefabPath);
+            PrefabUtility.UnloadPrefabContents(contents);
+
+            GameObject second = GenerateOrFail();
+
+            Assert.That(Udon<YakimaTankSeat>(second).transform.parent, Is.SameAs(second.transform));
+            Assert.That(LocalId(Udon<YakimaTankSeat>(second).gameObject), Is.EqualTo(seatId), "座席が作り直された");
         }
 
         [Test]
@@ -379,8 +521,9 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 Is.EquivalentTo(new[]
                 {
                     typeof(YakimaTankVehicle), typeof(YakimaTankVehicleSync), typeof(YakimaTankControlState), typeof(YakimaTankDesktopInput),
-                    typeof(YakimaTankVRInput), typeof(YakimaTankBoarding), typeof(YakimaTankSeat)
-                }));
+                    typeof(YakimaTankVRInput), typeof(YakimaTankBoarding), typeof(YakimaTankSeat), typeof(YakimaTankWeaponSync),
+                    typeof(YakimaTankHitbox), typeof(YakimaTankHitbox)
+                }.Concat(Enumerable.Repeat(typeof(YakimaTankShell), YakimaTankSetupService.ShellCount))));
             Assert.That(prefab.GetComponentsInChildren<VRC.SDK3.Components.VRCStation>(true), Has.Length.EqualTo(1));
             Assert.That(prefab.transform.Cast<Transform>().Count(t => PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)), Is.EqualTo(1));
         }
@@ -570,6 +713,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             _settings.leftWheels = otherSettings.leftWheels;
             _settings.rightWheels = otherSettings.rightWheels;
             _settings.turret = otherSettings.turret;
+            _settings.barrel = otherSettings.barrel;
 
             GameObject second = GenerateOrFail();
 
@@ -578,7 +722,9 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(second.transform.Cast<Transform>().Count(t => PrefabUtility.IsAnyPrefabInstanceRoot(t.gameObject)), Is.EqualTo(1));
             Assert.That(LocalId(Value<WheelCollider[]>(Vehicle(second), nameof(YakimaTankVehicle.leftWheels))[0]), Is.EqualTo(wheel));
             Assert.That(LocalId(Udon<YakimaTankSeat>(second).gameObject), Is.EqualTo(seat), "座席が作り直された");
-            Assert.That(Udon<YakimaTankSeat>(second).transform.parent, Is.SameAs(model.Find(TestWorkspace.TurretPath)), "座席が新しいモデルの砲塔の子でない");
+            Assert.That(Udon<YakimaTankSeat>(second).transform.parent, Is.SameAs(second.transform), "座席がルートの下でない");
+            var anchor = (Transform)Reference(Udon<YakimaTankSeat>(second), nameof(YakimaTankSeat.seatAnchor));
+            Assert.That(anchor.parent, Is.SameAs(model.Find(TestWorkspace.TurretPath)), "位置の参照が新しいモデルの砲塔の下でない");
         }
     }
 }

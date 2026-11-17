@@ -19,6 +19,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private static readonly string[] VRInputFieldNames = YakimaTankRuntimeValues.VRInputNames.ToArray();
         private static readonly string[] SyncFieldNames = YakimaTankRuntimeValues.SyncNames.ToArray();
         private static readonly string[] ContactFieldNames = YakimaTankRuntimeValues.ContactNames.ToArray();
+        private static readonly string[] WeaponFieldNames = YakimaTankRuntimeValues.WeaponNames.ToArray();
 
         private static readonly string[] SuspensionFieldNames =
         {
@@ -57,7 +58,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
-            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃。いまできるのは、乗って Desktop と VR で走り、ほかの人の画面に同期し、車両同士がぶつかって止まる・ゆっくり押せることまで。", MessageType.Info);
+            EditorGUILayout.HelpBox("未実装：命中のダメージ・HP・破壊・復活、発射の閃光と音。いまできるのは、乗って走り、砲塔を回して撃ち（自分の砲弾が当たった車両が分かるまで）、ほかの人の画面に同期し、車両同士がぶつかって止まることまで。", MessageType.Info);
             settings = (YakimaTankSetupSettings)EditorGUILayout.ObjectField("設定アセット", settings, typeof(YakimaTankSetupSettings), false);
             if (settings == null)
             {
@@ -121,8 +122,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 settings.body = TransformPopup("車体", settings.body, nodes, paths, true);
                 settings.leftWheels = TransformList("左の転輪", settings.leftWheels, nodes, paths);
                 settings.rightWheels = TransformList("右の転輪", settings.rightWheels, nodes, paths);
-                settings.turret = TransformPopup("砲塔（座席を置く）", settings.turret, nodes, paths, true);
-                settings.barrel = TransformPopup("砲身（記録だけ）", settings.barrel, nodes, paths, true);
+                settings.turret = TransformPopup("砲塔", settings.turret, nodes, paths, true);
+                settings.barrel = TransformPopup("砲身（砲塔の下）", settings.barrel, nodes, paths, true);
             }
 
             serialized.Update();
@@ -161,6 +162,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Section("操作（VR。Play 中に再適用できる）", VRInputFieldNames);
             Section("同期（Play 中に再適用できる）", SyncFieldNames);
             Section("接触（Play 中に再適用できる）", ContactFieldNames);
+            Section("砲塔・武器（Play 中に再適用できる）", WeaponFieldNames);
         }
 
         private Transform TransformPopup(string label, Transform current, Transform[] nodes, string[] paths, bool allowNone)

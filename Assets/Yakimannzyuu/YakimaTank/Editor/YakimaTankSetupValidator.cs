@@ -149,7 +149,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
             if (settings.turret == null)
             {
-                warning(nameof(settings.turret), "砲塔の対応がないので、座席を車体に置きます。");
+                error(nameof(settings.turret), "砲塔がありません。砲塔を左右に回し、座席をその上に付いて行かせます。");
             }
             else if (!BelongsTo(settings.turret, model, modelPath))
             {
@@ -164,16 +164,22 @@ namespace Yakimannzyuu.YakimaTank.Editor
                     string.Join(", ", solid));
             }
 
-            if (settings.barrel != null)
+            if (settings.barrel == null)
             {
-                if (!BelongsTo(settings.barrel, model, modelPath))
-                {
-                    error(nameof(settings.barrel), "砲身が、元のモデルの中を指していません。");
-                }
-                else
-                {
-                    warning(nameof(settings.barrel), "砲身は記録だけです。射撃はまだありません。");
-                }
+                error(nameof(settings.barrel), "砲身がありません。砲身を上下に回し、前の端から撃ちます。");
+            }
+            else if (!BelongsTo(settings.barrel, model, modelPath))
+            {
+                error(nameof(settings.barrel), "砲身が、元のモデルの中を指していません。");
+            }
+            else if (settings.turret != null && (settings.barrel == settings.turret || !settings.barrel.IsChildOf(settings.turret)))
+            {
+                error(nameof(settings.barrel), "砲身が、砲塔の下（子孫）にありません。砲身は砲塔と一緒に左右に回します。");
+            }
+            else if (!YakimaTankBounds.HasMesh(settings.barrel) && YakimaTankSetupService.FindMuzzleMarker(settings.barrel) == null)
+            {
+                error(nameof(settings.barrel),
+                    $"砲身の下に、メッシュも砲口の印もありません。ボーンで砲身を回すモデルは、砲身の下の砲口の位置に、名前に「{YakimaTankSetupService.MuzzleMarker}」を含む GameObject を置いてください。");
             }
         }
 
@@ -272,6 +278,18 @@ namespace Yakimannzyuu.YakimaTank.Editor
             NotNegative(nameof(settings.contactStopRate), settings.contactStopRate);
             NotNegative(nameof(settings.contactPushStrength), settings.contactPushStrength);
             NotNegative(nameof(settings.contactMaxPushAcceleration), settings.contactMaxPushAcceleration);
+            Positive(nameof(settings.turretTurnRate), settings.turretTurnRate);
+            Positive(nameof(settings.gunTurnRate), settings.gunTurnRate);
+            Range(nameof(settings.gunPitchMin), settings.gunPitchMin, -90f, 0f, true, true);
+            Range(nameof(settings.gunPitchMax), settings.gunPitchMax, 0f, 90f, true, true);
+            Positive(nameof(settings.shellSpeed), settings.shellSpeed);
+            NotNegative(nameof(settings.shellGravity), settings.shellGravity);
+            Positive(nameof(settings.shellLifetime), settings.shellLifetime);
+            if (!IsFinite(settings.reloadTime) || settings.reloadTime <= settings.sendInterval)
+            {
+                // 装填の時間が送る間隔以下だと、送る前に次を撃ち、ほかの人の画面で発射の表示がいつも欠ける（仕様書 0.5.0 の 1.4）。
+                error(nameof(settings.reloadTime), $"同期の送る間隔（{settings.sendInterval}）より長くしてください（今は {settings.reloadTime}）。");
+            }
         }
 
         private static bool IsFinite(float value)
