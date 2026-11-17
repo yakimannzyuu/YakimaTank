@@ -762,15 +762,11 @@ namespace Yakimannzyuu.YakimaTank
                 return angular ? body.angularVelocity : body.velocity;
             }
 
-            int latest = _historyCount - 1;
-            if (latest < 0)
-            {
-                return Vector3.zero;
-            }
-
+            // 履歴の配列は先に確保してあるので、状態がなくても 0 番は読める（値は使わない）。
+            int latest = Mathf.Max(0, _historyCount - 1);
             float display = DisplayTime(Networking.SimulationTime(gameObject), Time.realtimeSinceStartup, sendInterval);
-            return DisplayVelocity(true, angular ? _historyAngulars[latest] : _historyVelocities[latest], _historyStops[latest], display, _historyTimes[latest],
-                maxExtrapolation);
+            return DisplayVelocity(_historyCount > 0, angular ? _historyAngulars[latest] : _historyVelocities[latest], _historyStops[latest], display,
+                _historyTimes[latest], maxExtrapolation);
         }
 
         /// <summary>デバッグ UI：オーナー以外で、最新の状態の古さ（秒）。状態がなければ負。</summary>
