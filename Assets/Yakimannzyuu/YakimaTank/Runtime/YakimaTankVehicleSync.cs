@@ -49,6 +49,13 @@ namespace Yakimannzyuu.YakimaTank
         public const int SendMoving = 1;
         public const int SendStop = 2;
 
+        /// <summary>停止の印のない相手の状態が、これより古ければ接触を計算しない（秒）。</summary>
+        public const float ContactMaxAge = 1f;
+
+        public const int ContactNone = 0;
+        public const int ContactUse = 1;
+        public const int ContactStale = 2;
+
         private const float InputDeadZone = 0.01f;
 
         [Header("同期（Play 中に再適用できる）")]
@@ -871,6 +878,112 @@ namespace Yakimannzyuu.YakimaTank
         public static bool HoldUsable(float holdSendTime, float holdReceived, float now, float lastUsedTime)
         {
             return now - holdReceived <= HoldLifetime && holdSendTime > lastUsedTime;
+        }
+
+        /// <summary>相手の状態から接触を計算するか。停止の印の状態は古くても使う（止まった車両は 1 回しか送らない）。</summary>
+        public static int ContactStatus(bool hasState, bool stopped, float age)
+        {
+            if (!hasState)
+            {
+                return ContactNone;
+            }
+
+            return stopped || age <= ContactMaxAge ? ContactUse : ContactStale;
+        }
+
+        public static Vector3 ContactPosition(Vector3 position, Vector3 velocity, bool stopped, float age, float maxExtrapolation)
+        {
+            return stopped ? position : ExtrapolatePosition(position, velocity, age, maxExtrapolation);
+        }
+
+        public static Quaternion ContactRotation(Quaternion rotation, Vector3 angularVelocity, bool stopped, float age, float maxExtrapolation)
+        {
+            return stopped ? rotation : ExtrapolateRotation(rotation, angularVelocity, age, maxExtrapolation);
+        }
+
+        public static Vector3 ContactVelocity(Vector3 velocity, bool stopped)
+        {
+            return stopped ? Vector3.zero : velocity;
+        }
+
+        /// <summary>
+        /// 水平面での箱の重なり。自分を動かして離す水平の向き × 深さを返し、重ならなければ 0。
+        /// Physics.ComputePenetration は使わない。オーナー以外の画面の相手のコライダーは無効で、無効なコライダーとは計算できない（仕様書 0.4.0 の 1.8）。
+        /// 向きの候補は、2 つの箱の前後と左右の軸を水平面に写した 4 つ。傾いた箱を写した形の辺の向きまでは見ない（簡易の判定）。
+        /// </summary>
+        public static Vector3 HorizontalPenetration(Vector3 center, Quaternion rotation, Vector3 half, Vector3 otherCenter, Quaternion otherRotation, Vector3 otherHalf)
+        {
+            Vector3 right = rotation * Vector3.right;
+            Vector3 up = rotation * Vector3.up;
+            Vector3 forward = rotation * Vector3.forward;
+            Vector3 otherRight = otherRotation * Vector3.right;
+            Vector3 otherUp = otherRotation * Vector3.up;
+            Vector3 otherForward = otherRotation * Vector3.forward;
+            Vector3 offset = center - otherCenter;
+
+            float height = BoxExtent(right, up, forward, half, Vector3.up) + BoxExtent(otherRight, otherUp, otherForward, otherHalf, Vector3.up);
+            if (Mathf.Abs(offset.y) >= height)
+            {
+                return Vector3.zero;
+            }
+
+            Vector3 best = Vector3.zero;
+            float bestDepth = float.MaxValue;
+            for (int index = 0; index < 4; index++)
+            {
+                Vector3 candidate = index == 0 ? right : index == 1 ? forward : index == 2 ? otherRight : otherForward;
+                Vector3 axis = new Vector3(candidate.x, 0f, candidate.z);
+                float length = axis.magnitude;
+                if (length < 1e-4f)
+                {
+                    // 横倒しで、その軸が真上を向いている。水平の向きにならない。
+                    continue;
+                }
+
+                axis /= length;
+                float along = Vector3.Dot(offset, axis);
+                float depth = BoxExtent(right, up, forward, half, axis) + BoxExtent(otherRight, otherUp, otherForward, otherHalf, axis) - Mathf.Abs(along);
+                if (depth <= 0f)
+                {
+                    return Vector3.zero;
+                }
+
+                if (depth < bestDepth)
+                {
+                    bestDepth = depth;
+                    best = along < 0f ? -axis : axis;
+                }
+            }
+
+            return bestDepth == float.MaxValue ? Vector3.zero : best * bestDepth;
+        }
+
+        /// <summary>箱をその向きに写したときの、中心から端までの長さ。</summary>
+        public static float BoxExtent(Vector3 right, Vector3 up, Vector3 forward, Vector3 half, Vector3 axis)
+        {
+            return Mathf.Abs(Vector3.Dot(right, axis)) * half.x + Mathf.Abs(Vector3.Dot(up, axis)) * half.y + Mathf.Abs(Vector3.Dot(forward, axis)) * half.z;
+        }
+
+        /// <summary>
+        /// 止める分。自分が相手へ寄る速さのうち、相手が逃げる速さを超えた分だけを消す。
+        /// 相手が寄って来る速さは写さない。遅れて届いた相手の速さを写すと、ぶつけられた側が飛ばされ、遅れの分だけ反動が増える。
+        /// </summary>
+        public static Vector3 ContactStopChange(Vector3 velocity, Vector3 otherVelocity, Vector3 normal, float stopRate, float deltaTime)
+        {
+            float approach = Mathf.Max(0f, -Vector3.Dot(velocity, normal) - Mathf.Max(0f, -Vector3.Dot(otherVelocity, normal)));
+            return normal * Mathf.Min(approach, approach * stopRate * deltaTime);
+        }
+
+        /// <summary>押し返す加速。深さに比例し、上限で止める。</summary>
+        public static Vector3 ContactPush(Vector3 normal, float depth, float pushStrength, float maxPush)
+        {
+            return normal * Mathf.Min(pushStrength * Mathf.Max(0f, depth), maxPush);
+        }
+
+        /// <summary>相手ごとの分の合計。押し返す加速の合計だけを上限で切る。</summary>
+        public static Vector3 ContactTotalChange(Vector3 stop, Vector3 push, float maxPush, float deltaTime)
+        {
+            return stop + Vector3.ClampMagnitude(push, maxPush) * deltaTime;
         }
 
         public static bool IsMoving(float speed, float turnRate, bool hasInput)
