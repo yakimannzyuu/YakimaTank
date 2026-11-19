@@ -49,16 +49,16 @@ namespace Yakimannzyuu.YakimaTank.Editor
         [Tooltip("グリップ・トリガーを握った（引いた）とみなす値（0〜1）")]
         public float gripThreshold = 0.5f;
 
-        [Tooltip("ねじりの最大角（度）。これだけねじると入力が端になる")]
+        [Tooltip("ねじりの最大角（度）。手の先をこれだけ左右・上下に向けると入力が端になる")]
         public float maxTwistAngle = 45f;
 
-        [Tooltip("前後の最大距離（m）。これだけ動かすと入力が端になる")]
+        [Tooltip("前後の最大距離（m。左手だけ）。これだけ動かすと入力が端になる")]
         public float maxPushDistance = 0.15f;
 
         [Tooltip("前進後退入力（-1〜1）がこれより後ろにある間は後退のギア")]
         public float reverseThreshold = 0.5f;
 
-        [Tooltip("ねじり・前後・トリガーを -1〜1・0〜1 にした後に掛ける不感帯")]
+        [Tooltip("向き・前後・トリガーを -1〜1・0〜1 にした後に掛ける不感帯")]
         public float deadzone = 0.1f;
 
         [Header("同期（Play 中に再適用できる）")]
