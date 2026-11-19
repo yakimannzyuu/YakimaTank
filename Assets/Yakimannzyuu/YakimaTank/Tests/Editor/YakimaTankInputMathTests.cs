@@ -144,6 +144,31 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(0f, 0f, 30f) * origin), Is.EqualTo(0f).Within(0.01f), "手首をひねっただけでは上下の向きにならない");
         }
 
+        [Test]
+        public void 左右と上下の向きは180度を超えると反対側の角度に折り返す()
+        {
+            Quaternion origin = Quaternion.Euler(0f, 90f, 0f);
+
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, 190f, 0f) * origin), Is.EqualTo(-170f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, -190f, 0f) * origin), Is.EqualTo(170f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(-190f, 0f, 0f) * origin), Is.EqualTo(-170f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(190f, 0f, 0f) * origin), Is.EqualTo(170f).Within(0.01f));
+        }
+
+        [Test]
+        public void 斜めに向けても左右と上下の向きはそれぞれの角度になる()
+        {
+            Quaternion origin = Quaternion.Euler(20f, -60f, 15f);
+            Quaternion yawThenPitch = Quaternion.Euler(0f, 30f, 0f) * Quaternion.Euler(-20f, 0f, 0f);
+            Quaternion pitchThenYaw = Quaternion.Euler(-20f, 0f, 0f) * Quaternion.Euler(0f, 30f, 0f);
+
+            foreach (Quaternion turn in new[] { yawThenPitch, pitchThenYaw })
+            {
+                Assert.That(YakimaTankVRInput.YawAngle(origin, turn * origin), Is.EqualTo(30f).Within(0.01f));
+                Assert.That(YakimaTankVRInput.PitchAngle(origin, turn * origin), Is.EqualTo(20f).Within(0.01f));
+            }
+        }
+
         [TestCase(22.5f, 45f, 0f, 0.5f)]
         [TestCase(-45f, 45f, 0f, -1f)]
         [TestCase(-90f, 45f, 0f, -1f)]
