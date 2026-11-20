@@ -10,7 +10,7 @@ using VRC.Udon;
 namespace Yakimannzyuu.YakimaTank.Editor
 {
     /// <summary>
-    /// Play 中に再適用できる値。設定アセットと、値を受ける Udon（車両・座席・VR の入力）で同じ名前のフィールドにし、
+    /// Play 中に再適用できる値。設定アセットと、値を受ける Udon（車両・座席・VR の入力・同期）で同じ名前のフィールドにし、
     /// 生成でも Play 中の再適用でも、この一覧だけを写す。名前がずれると片方にだけ値が入るので、テストで両方にあることを確かめている。
     /// </summary>
     public static class YakimaTankRuntimeValues
@@ -45,13 +45,56 @@ namespace Yakimannzyuu.YakimaTank.Editor
             nameof(YakimaTankVRInput.deadzone)
         };
 
-        /// <summary>値を受ける Udon の型と、その型が受ける名前の組。</summary>
+        /// <summary>同期。同期の Udon が受ける。</summary>
+        public static readonly IReadOnlyList<string> SyncNames = new[]
+        {
+            nameof(YakimaTankVehicleSync.sendInterval),
+            nameof(YakimaTankVehicleSync.maxExtrapolation)
+        };
+
+        /// <summary>接触。相手の履歴を持つ同期の Udon が受ける。</summary>
+        public static readonly IReadOnlyList<string> ContactNames = new[]
+        {
+            nameof(YakimaTankVehicleSync.contactStopRate),
+            nameof(YakimaTankVehicleSync.contactPushStrength),
+            nameof(YakimaTankVehicleSync.contactMaxPushAcceleration)
+        };
+
+        /// <summary>砲塔・武器。武器の同期の Udon が受ける。</summary>
+        public static readonly IReadOnlyList<string> WeaponNames = new[]
+        {
+            nameof(YakimaTankWeaponSync.turretTurnRate),
+            nameof(YakimaTankWeaponSync.gunTurnRate),
+            nameof(YakimaTankWeaponSync.gunPitchMin),
+            nameof(YakimaTankWeaponSync.gunPitchMax),
+            nameof(YakimaTankWeaponSync.shellSpeed),
+            nameof(YakimaTankWeaponSync.shellGravity),
+            nameof(YakimaTankWeaponSync.shellLifetime),
+            nameof(YakimaTankWeaponSync.reloadTime),
+            nameof(YakimaTankWeaponSync.damage)
+        };
+
+        /// <summary>HP・復活。生存の状態の Udon が受ける（1 発のダメージは撃つ側の武器が受ける）。</summary>
+        public static readonly IReadOnlyList<string> LifeNames = new[]
+        {
+            nameof(YakimaTankLife.maxHealth),
+            nameof(YakimaTankLife.respawnDelay)
+        };
+
+        /// <summary>値を受ける Udon の型と、その型が受ける名前の組。1 つの型が複数の組を受けることがある（同期の Udon は同期と接触）。</summary>
         public static readonly IReadOnlyList<KeyValuePair<Type, IReadOnlyList<string>>> Groups = new[]
         {
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicle), Names),
             new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankSeat), SeatNames),
-            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVRInput), VRInputNames)
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVRInput), VRInputNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), SyncNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankVehicleSync), ContactNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankWeaponSync), WeaponNames),
+            new KeyValuePair<Type, IReadOnlyList<string>>(typeof(YakimaTankLife), LifeNames)
         };
+
+        /// <summary>値を受ける Udon の型（重ならない）。</summary>
+        public static IEnumerable<Type> Receivers => Groups.Select(group => group.Key).Distinct();
 
         public static IEnumerable<string> AllNames => Groups.SelectMany(group => group.Value);
 
@@ -92,15 +135,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
 
         public static IReadOnlyList<string> NamesFor(Type behaviour)
         {
-            foreach (KeyValuePair<Type, IReadOnlyList<string>> group in Groups)
-            {
-                if (group.Key == behaviour)
-                {
-                    return group.Value;
-                }
-            }
-
-            return Array.Empty<string>();
+            return Groups.Where(group => group.Key == behaviour).SelectMany(group => group.Value).ToList();
         }
 
         public static void Copy(YakimaTankSetupSettings from, YakimaTankSetupSettings to)

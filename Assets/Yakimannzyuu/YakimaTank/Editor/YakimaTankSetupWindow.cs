@@ -4,6 +4,7 @@ using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using VRC.Udon;
 
 namespace Yakimannzyuu.YakimaTank.Editor
@@ -16,6 +17,17 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private static readonly string[] RuntimeFieldNames = YakimaTankRuntimeValues.Names.ToArray();
         private static readonly string[] SeatFieldNames = YakimaTankRuntimeValues.SeatNames.ToArray();
         private static readonly string[] VRInputFieldNames = YakimaTankRuntimeValues.VRInputNames.ToArray();
+        private static readonly string[] SyncFieldNames = YakimaTankRuntimeValues.SyncNames.ToArray();
+        private static readonly string[] ContactFieldNames = YakimaTankRuntimeValues.ContactNames.ToArray();
+        // 1 発のダメージは武器の Udon が受けるが、ウィンドウでは「HP・復活」に並べる（仕様書 0.6.0 の 1.5）。
+        private static readonly string[] WeaponFieldNames = YakimaTankRuntimeValues.WeaponNames.Where(name => name != nameof(YakimaTankSetupSettings.damage)).ToArray();
+
+        private static readonly string[] LifeFieldNames =
+        {
+            nameof(YakimaTankSetupSettings.maxHealth),
+            nameof(YakimaTankSetupSettings.damage),
+            nameof(YakimaTankSetupSettings.respawnDelay)
+        };
 
         private static readonly string[] SuspensionFieldNames =
         {
@@ -54,7 +66,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             scroll = EditorGUILayout.BeginScrollView(scroll);
-            EditorGUILayout.HelpBox("未実装：砲塔の操作・射撃・同期。いまできるのは、1 人で乗って Desktop と VR で走ることまで。", MessageType.Info);
+            EditorGUILayout.HelpBox("未実装：発射の閃光と音、破壊の見た目。いまできるのは、乗って走り、砲塔を回して撃ち、当たると相手の HP が減り、0 で破壊されて一定の時間の後に最初の位置で復活し、ほかの人の画面に同期し、車両同士がぶつかって止まることまで。", MessageType.Info);
             settings = (YakimaTankSetupSettings)EditorGUILayout.ObjectField("設定アセット", settings, typeof(YakimaTankSetupSettings), false);
             if (settings == null)
             {
@@ -118,8 +130,8 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 settings.body = TransformPopup("車体", settings.body, nodes, paths, true);
                 settings.leftWheels = TransformList("左の転輪", settings.leftWheels, nodes, paths);
                 settings.rightWheels = TransformList("右の転輪", settings.rightWheels, nodes, paths);
-                settings.turret = TransformPopup("砲塔（座席を置く）", settings.turret, nodes, paths, true);
-                settings.barrel = TransformPopup("砲身（記録だけ）", settings.barrel, nodes, paths, true);
+                settings.turret = TransformPopup("砲塔", settings.turret, nodes, paths, true);
+                settings.barrel = TransformPopup("砲身（砲塔の下）", settings.barrel, nodes, paths, true);
             }
 
             serialized.Update();
@@ -156,6 +168,10 @@ namespace Yakimannzyuu.YakimaTank.Editor
             Section("走行（Play 中に再適用できる）", RuntimeFieldNames);
             Section("座席（Play 中に再適用できる）", SeatFieldNames);
             Section("操作（VR。Play 中に再適用できる）", VRInputFieldNames);
+            Section("同期（Play 中に再適用できる）", SyncFieldNames);
+            Section("接触（Play 中に再適用できる）", ContactFieldNames);
+            Section("砲塔・武器（Play 中に再適用できる）", WeaponFieldNames);
+            Section("HP・復活（Play 中に再適用できる）", LifeFieldNames);
         }
 
         private Transform TransformPopup(string label, Transform current, Transform[] nodes, string[] paths, bool allowNone)
@@ -231,6 +247,34 @@ namespace Yakimannzyuu.YakimaTank.Editor
             }
 
             EditorGUILayout.EndHorizontal();
+            DrawRegistry();
+        }
+
+        /// <summary>シーンの車両の一覧の状態。手で置いた車両を入れるときと、一覧が古いときに更新する。</summary>
+        private void DrawRegistry()
+        {
+            Scene scene = EditorSceneManager.GetActiveScene();
+            List<string> problems = YakimaTankSceneRegistry.Check(scene);
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("シーンの車両の一覧", EditorStyles.boldLabel);
+            if (problems.Count == 0)
+            {
+                EditorGUILayout.HelpBox($"一覧は合っています（車両 {YakimaTankSceneRegistry.FindVehicles(scene).Count} 台）。", MessageType.None);
+            }
+            else
+            {
+                EditorGUILayout.HelpBox("一覧が実際の車両と合いません。このままでは同じ人が持つ車両同士が当たり、VRChat SDK のビルドも止まります。\n" + string.Join("\n", problems), MessageType.Warning);
+            }
+
+            using (new EditorGUI.DisabledScope(EditorApplication.isPlaying))
+            {
+                if (GUILayout.Button("シーンの車両一覧を更新"))
+                {
+                    List<string> changes = YakimaTankSceneRegistry.Update(scene);
+                    _messages.Clear();
+                    _messages.Add(changes.Count > 0 ? string.Join(" / ", changes) + "。シーンを保存してください。" : "シーンの車両の一覧は、もう合っています。");
+                }
+            }
         }
 
         private void Show(IEnumerable<SetupDiagnostic> diagnostics, SetupResult result)

@@ -58,5 +58,58 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             var body = new Bounds(new Vector3(0f, 1.5f, 0f), new Vector3(2f, 1f, 4f));
             Assert.That(YakimaTankSetupMath.BodyColliderBounds(body, 0.4f).min.y, Is.EqualTo(1f).Within(1e-5f));
         }
+
+        [Test]
+        public void 乗車の判定の箱は前後と左右が車体のコライダーより各面に余白だけ外でモデルの張り出しを含めない()
+        {
+            float margin = YakimaTankSetupMath.BoardingMargin;
+            var body = new Bounds(new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
+            var model = new Bounds(new Vector3(0f, 0.87f, 1.5f), new Vector3(2.6f, 1.74f, 7f));
+
+            Bounds area = YakimaTankSetupMath.BoardingAreaBounds(body, model);
+
+            Assert.That(area.min.x, Is.EqualTo(-1f - margin).Within(1e-5f));
+            Assert.That(area.max.x, Is.EqualTo(1f + margin).Within(1e-5f), "転輪の外側 1.3 ではない");
+            Assert.That(area.min.z, Is.EqualTo(-2f - margin).Within(1e-5f));
+            Assert.That(area.max.z, Is.EqualTo(2f + margin).Within(1e-5f), "砲身の先 5 ではない");
+        }
+
+        [Test]
+        public void 乗車の判定の箱の上下はモデル全体と車体のコライダーを合わせた範囲より各面に余白だけ外()
+        {
+            float margin = YakimaTankSetupMath.BoardingMargin;
+            var body = new Bounds(new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
+            var model = new Bounds(new Vector3(0f, 0.87f, 0f), new Vector3(2.6f, 1.74f, 4f));
+            var lowModel = new Bounds(new Vector3(0f, 0.6f, 0f), new Vector3(2.6f, 0.4f, 4f));
+
+            Bounds area = YakimaTankSetupMath.BoardingAreaBounds(body, model);
+
+            Assert.That(area.min.y, Is.EqualTo(0f - margin).Within(1e-5f), "モデルの下端より外");
+            Assert.That(area.max.y, Is.EqualTo(1.74f + margin).Within(1e-5f), "砲塔の上端より外");
+            Assert.That(YakimaTankSetupMath.BoardingAreaBounds(body, lowModel).max.y, Is.EqualTo(1.3f + margin).Within(1e-5f),
+                "モデルが車体のコライダーより低くても、車体のコライダーの上端より外");
+        }
+
+        [Test]
+        public void 砲弾の数は寿命を装填の時間で割った切り上げに1を足した数で2つ以上()
+        {
+            Assert.That(YakimaTankSetupMath.ShellCount(3f, 3f), Is.EqualTo(2), "既定値：飛ぶのは 1 発");
+            Assert.That(YakimaTankSetupMath.ShellCount(3f, 1f), Is.EqualTo(4));
+            Assert.That(YakimaTankSetupMath.ShellCount(3f, 0.7f), Is.EqualTo(6), "切り上げ");
+            Assert.That(YakimaTankSetupMath.ShellCount(1f, 5f), Is.EqualTo(2), "少なくとも 2 つ");
+        }
+
+        [Test]
+        public void 砲塔にメッシュがないときの命中用のトリガーは前後と左右が車体のコライダーで上端がモデル全体の上端()
+        {
+            var body = new Bounds(new Vector3(0f, 0.85f, 0f), new Vector3(2f, 0.9f, 4f));
+            var model = new Bounds(new Vector3(0f, 1.2f, 0.4f), new Vector3(2.4f, 2.4f, 5f));
+            Bounds upper = YakimaTankSetupMath.UpperHitboxBounds(body, model);
+            Assert.That(Vector3.Distance(upper.min, body.min), Is.LessThan(1e-5f));
+            Assert.That(Vector3.Distance(upper.max, new Vector3(body.max.x, model.max.y, body.max.z)), Is.LessThan(1e-5f));
+
+            var low = new Bounds(new Vector3(0f, 0.5f, 0f), new Vector3(2f, 1f, 4f));
+            Assert.That(YakimaTankSetupMath.UpperHitboxBounds(body, low).max.y, Is.EqualTo(body.max.y).Within(1e-5f), "モデルが車体のコライダーより低くても、車体の箱より小さくしない");
+        }
     }
 }

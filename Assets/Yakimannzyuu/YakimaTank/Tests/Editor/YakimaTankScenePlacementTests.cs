@@ -1,5 +1,7 @@
 using System.Collections;
+using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UdonSharpEditor;
 using UnityEditor;
@@ -9,6 +11,7 @@ using UnityEngine.Animations;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using VRC.SDK3.Components;
+using VRC.SDKBase.Network;
 using VRC.Udon;
 
 namespace Yakimannzyuu.YakimaTank.Editor.Tests
@@ -299,6 +302,182 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
 
             Assert.That(second.Succeeded, Is.False);
             Assert.That(second.Conflicts.Any(c => c.Contains(nameof(YakimaTankVehicle))), Is.True);
+        }
+
+        private static UdonBehaviour VehicleUdon(GameObject root)
+        {
+            return root.GetComponents<UdonBehaviour>().Single(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankVehicle));
+        }
+
+        [Test]
+        public void UdonSharpがスクリプトに合わせて直した同期方式の上書きは手の変更とみなさない()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            // 版を上げる前の生成 Prefab（車両の Udon が None）を置いたシーンで、U# がスクリプトの指定（Manual）に合わせてインスタンスの側を直した状態を作る。
+            GameObject contents = PrefabUtility.LoadPrefabContents(_settings.outputPrefabPath);
+            VehicleUdon(contents).SyncMethod = VRC.SDKBase.Networking.SyncType.None;
+            PrefabUtility.SaveAsPrefabAsset(contents, _settings.outputPrefabPath);
+            PrefabUtility.UnloadPrefabContents(contents);
+            UdonBehaviour instance = VehicleUdon(first.Instance);
+            instance.SyncMethod = VRC.SDKBase.Networking.SyncType.Manual;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(instance);
+            Assert.That(PrefabUtility.GetObjectOverrides(first.Instance).Any(o => o.instanceObject == instance), Is.True, "同期方式の上書きがない（判定にならない）");
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.True, second.Error + " " + string.Join(" / ", second.Conflicts));
+        }
+
+        [Test]
+        public void スクリプトの指定と違う同期方式の上書きは手の変更として止める()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            UdonBehaviour instance = VehicleUdon(first.Instance);
+            instance.SyncMethod = VRC.SDKBase.Networking.SyncType.Continuous;
+            PrefabUtility.RecordPrefabInstancePropertyModifications(instance);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.False);
+            Assert.That(second.Conflicts.Any(c => c.Contains("手で変えた")), Is.True, string.Join(" / ", second.Conflicts));
+        }
+
+        private YakimaTankVehicleSync SyncOf(GameObject vehicleRoot)
+        {
+            return YakimaTankSceneRegistry.FindVehicles(_scene).Single(v => v.gameObject == vehicleRoot);
+        }
+
+        [Test]
+        public void 配置するとシーンの車両の一覧が管理用のルートの下に作られ置いた車両が入る()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            YakimaTankVehicleRegistry registry = YakimaTankSceneRegistry.FindRegistries(_scene).Single();
+            Assert.That(registry.transform.parent, Is.SameAs(Root(YakimaTankScenePlacement.RootName).transform));
+            Assert.That(registry.vehicles, Is.EqualTo(new[] { SyncOf(first.Instance) }));
+            Assert.That(YakimaTankSceneRegistry.Check(_scene), Is.Empty);
+            Assert.That(first.Changes.Any(c => c.Contains(YakimaTankSceneRegistry.RegistryName)), Is.True);
+        }
+
+        [Test]
+        public void 手で置いた2台目は一覧の更新で入り2回更新しても一覧は1つ()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            var manual = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(_settings.outputPrefabPath), _scene);
+            manual.transform.position = new Vector3(8f, 0f, 0f);
+            Assert.That(YakimaTankSceneRegistry.Check(_scene).Any(p => p.Contains("入っていない")), Is.True, "手で置いた車両が漏れとして見つからない");
+
+            Assert.That(YakimaTankSceneRegistry.Rebuild(_scene), Is.True);
+            Assert.That(YakimaTankSceneRegistry.Rebuild(_scene), Is.False, "同じなら書かない");
+
+            Assert.That(YakimaTankSceneRegistry.FindRegistries(_scene), Has.Count.EqualTo(1));
+            Assert.That(YakimaTankSceneRegistry.FindRegistries(_scene).Single().vehicles, Is.EquivalentTo(new[] { SyncOf(first.Instance), SyncOf(manual) }));
+            Assert.That(YakimaTankSceneRegistry.Check(_scene), Is.Empty);
+        }
+
+        [Test]
+        public void 一覧の重複と消えた車両と漏れを見つける()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            YakimaTankVehicleRegistry registry = YakimaTankSceneRegistry.FindRegistries(_scene).Single();
+            YakimaTankVehicleSync sync = SyncOf(first.Instance);
+
+            registry.vehicles = new[] { sync, sync, null };
+            var problems = YakimaTankSceneRegistry.Check(_scene);
+            Assert.That(problems.Any(p => p.Contains("2 回以上")), Is.True, string.Join(" / ", problems));
+            Assert.That(problems.Any(p => p.Contains("消えた車両")), Is.True, string.Join(" / ", problems));
+
+            registry.vehicles = new YakimaTankVehicleSync[0];
+            Assert.That(YakimaTankSceneRegistry.Check(_scene).Any(p => p.Contains("入っていない")), Is.True);
+        }
+
+        [Test]
+        public void 一覧が実際の車両と合わなければビルドの前の確かめがビルドを止める()
+        {
+            YakimaTankScenePlacement.Place(_settings, _scene);
+            PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(_settings.outputPrefabPath), _scene);
+
+            LogAssert.Expect(LogType.Error, new Regex("シーンの車両の一覧"));
+            Assert.That(YakimaTankRegistryBuildCheck.Allows(_scene), Is.False);
+
+            YakimaTankSceneRegistry.Rebuild(_scene);
+            Assert.That(YakimaTankRegistryBuildCheck.Allows(_scene), Is.True);
+        }
+
+        private VRCSceneDescriptor Descriptor => Root("VRCWorld").GetComponent<VRCSceneDescriptor>();
+
+        /// <summary>0.2.0 でビルドしたシーンのように、車両のルートに同期の Udon を足す前の型（UdonBehaviour 1 つ）を記録した Network ID を入れる。</summary>
+        private void RecordOldNetworkIds(GameObject vehicle)
+        {
+            GameObject seat = vehicle.GetComponentsInChildren<VRCStation>(true).Single().gameObject;
+            GameObject boarding = vehicle.GetComponentsInChildren<UdonBehaviour>(true)
+                .Single(b => UdonSharpEditorUtility.GetUdonSharpBehaviourType(b) == typeof(YakimaTankBoarding)).gameObject;
+            Descriptor.NetworkIDCollection = new List<NetworkIDPair>
+            {
+                new NetworkIDPair { ID = 10, gameObject = vehicle, SerializedTypeNames = new List<string> { typeof(UdonBehaviour).FullName } },
+                new NetworkIDPair { ID = 11, gameObject = seat, SerializedTypeNames = NetworkIDAssignment.GetSerializedTypes(seat) },
+                new NetworkIDPair { ID = 12, gameObject = boarding, SerializedTypeNames = new List<string>() },
+                new NetworkIDPair { ID = 13, gameObject = Root("Unmanaged"), SerializedTypeNames = new List<string> { "Other.Type" } }
+            };
+            Assert.That(NetworkIDAssignment.GetSerializedTypes(vehicle), Is.Not.EqualTo(new List<string> { typeof(UdonBehaviour).FullName }),
+                "車両のルートの今の型が古い型と同じ（判定にならない）");
+        }
+
+        [Test]
+        public void 車両の中を指す型の古いNetworkIDは一覧の更新で外し型の合うIDと型のないIDと車両の外のIDは残す()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            RecordOldNetworkIds(first.Instance);
+            Assert.That(YakimaTankSceneRegistry.Check(_scene).Any(p => p.Contains("Network ID 10")), Is.True, "型の古い ID を一覧の確かめで見つける");
+
+            List<string> changes = YakimaTankSceneRegistry.Update(_scene);
+
+            Assert.That(Descriptor.NetworkIDCollection.Select(pair => pair.ID), Is.EquivalentTo(new[] { 11, 12, 13 }));
+            Assert.That(changes.Any(c => c.Contains("Network ID")), Is.True, string.Join(" / ", changes));
+            Assert.That(YakimaTankSceneRegistry.Check(_scene), Is.Empty);
+        }
+
+        [Test]
+        public void ルートのUdonが増える前の型を記録した車両のNetworkIDも一覧の更新で外す()
+        {
+            // 0.5.0 までにビルドしたシーンでは、ルートに生存の状態の Udon がなく、UdonBehaviour が 1 つ少ない型を記録している（仕様書 0.6.0 の 1.6）。
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            GameObject vehicle = first.Instance;
+            List<string> current = NetworkIDAssignment.GetSerializedTypes(vehicle);
+            var previous = new List<string>(current);
+            Assert.That(previous.Remove(typeof(UdonBehaviour).FullName), Is.True, "今の型に UdonBehaviour がない（判定にならない）");
+            Descriptor.NetworkIDCollection = new List<NetworkIDPair>
+            {
+                new NetworkIDPair { ID = 20, gameObject = vehicle, SerializedTypeNames = previous }
+            };
+
+            YakimaTankSceneRegistry.Update(_scene);
+
+            Assert.That(Descriptor.NetworkIDCollection.Select(pair => pair.ID), Has.No.Member(20));
+            Assert.That(YakimaTankSceneRegistry.Check(_scene), Is.Empty);
+        }
+
+        [Test]
+        public void 配置しても型の古い車両のNetworkIDを外す()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            RecordOldNetworkIds(first.Instance);
+
+            PlacementResult second = YakimaTankScenePlacement.Place(_settings, _scene);
+
+            Assert.That(second.Succeeded, Is.True, second.Error);
+            Assert.That(Descriptor.NetworkIDCollection.Select(pair => pair.ID), Has.No.Member(10));
+        }
+
+        [Test]
+        public void ビルドの前の確かめは型の古い車両のNetworkIDを外してビルドを止めない()
+        {
+            PlacementResult first = YakimaTankScenePlacement.Place(_settings, _scene);
+            RecordOldNetworkIds(first.Instance);
+
+            Assert.That(YakimaTankRegistryBuildCheck.Allows(_scene), Is.True);
+            Assert.That(Descriptor.NetworkIDCollection.Select(pair => pair.ID), Is.EquivalentTo(new[] { 11, 12, 13 }));
         }
 
         [Test]

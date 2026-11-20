@@ -30,6 +30,28 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
+        public void オーナーでなければ走行の入力を受けず外したときに入力を0にする()
+        {
+            var gameObject = new GameObject("Vehicle");
+            try
+            {
+                var vehicle = gameObject.AddComponent<YakimaTankVehicle>();
+                vehicle.SetDriveInput(1f, 1f, 1f);
+                vehicle._SetAuthority(false);
+                Assert.That(new[] { vehicle.throttleInput, vehicle.steerInput, vehicle.brakeInput }, Is.EqualTo(new[] { 0f, 0f, 0f }), "外したら 0");
+                vehicle.SetDriveInput(0.5f, 0.5f, 0.5f);
+                Assert.That(new[] { vehicle.throttleInput, vehicle.steerInput, vehicle.brakeInput }, Is.EqualTo(new[] { 0f, 0f, 0f }), "オーナーでない間は受けない");
+                vehicle._SetAuthority(true);
+                vehicle.SetDriveInput(0.5f, 0.5f, 0.5f);
+                Assert.That(vehicle.throttleInput, Is.EqualTo(0.5f));
+            }
+            finally
+            {
+                Object.DestroyImmediate(gameObject);
+            }
+        }
+
+        [Test]
         public void 前進の入力では入力の割合だけ駆動トルクを掛ける()
         {
             Assert.That(YakimaTankVehicle.CalculateDriveTorque(0.5f, 2f, Drive, MaxForward, MaxReverse), Is.EqualTo(6000f));
@@ -119,6 +141,33 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         public void 左への旋回は負の角速度になる()
         {
             Assert.That(YakimaTankVehicle.CalculateYawRate(0f, -1f, 30f, 90f, 1f), Is.EqualTo(-30f).Within(1e-5f));
+        }
+
+        [Test]
+        public void ブレーキの減速はブレーキのトルクを転輪の半径と質量で割った値()
+        {
+            Assert.That(YakimaTankVehicle.BrakeDeceleration(IdleBrake, 0.4f, 20000f), Is.EqualTo(2.5f).Within(1e-5f));
+            Assert.That(YakimaTankVehicle.BrakeDeceleration(Brake, 0.4f, 20000f), Is.EqualTo(7.5f).Within(1e-5f));
+            Assert.That(YakimaTankVehicle.BrakeDeceleration(IdleBrake, 0f, 20000f), Is.EqualTo(0f), "半径が分からない");
+        }
+
+        [Test]
+        public void 駆動していない車両は押す加速の前後の分がブレーキの減速を超えると張り付きを外す()
+        {
+            Assert.That(YakimaTankVehicle.ReleasesForPush(5f, 2.5f, false), Is.True, "前へ押す");
+            Assert.That(YakimaTankVehicle.ReleasesForPush(-5f, 2.5f, false), Is.True, "後ろへ押す");
+            Assert.That(YakimaTankVehicle.ReleasesForPush(2f, 2.5f, false), Is.False, "ブレーキの方が強い");
+            Assert.That(YakimaTankVehicle.ReleasesForPush(5f, 7.5f, false), Is.False, "ブレーキを踏んでいる");
+            Assert.That(YakimaTankVehicle.ReleasesForPush(0f, 0f, false), Is.False, "押されていない");
+            Assert.That(YakimaTankVehicle.ReleasesForPush(5f, 2.5f, true), Is.False, "駆動している車輪は張り付かない");
+        }
+
+        [Test]
+        public void ブレーキの代わりの減速は速度を0へ向けて減らし0を越えない()
+        {
+            Assert.That(YakimaTankVehicle.ApplyBrake(1f, 2.5f, 0.02f), Is.EqualTo(0.95f).Within(1e-5f));
+            Assert.That(YakimaTankVehicle.ApplyBrake(-1f, 2.5f, 0.02f), Is.EqualTo(-0.95f).Within(1e-5f));
+            Assert.That(YakimaTankVehicle.ApplyBrake(0.01f, 2.5f, 0.02f), Is.EqualTo(0f));
         }
     }
 }

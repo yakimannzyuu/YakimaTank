@@ -20,6 +20,10 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         public const string Root = "Assets/__YakimaTankTests";
         public const float WheelRadius = 0.4f;
         public const string TurretPath = "Hull/Turret";
+        public const string BarrelPath = "Hull/Turret/Barrel";
+
+        /// <summary>砲身の前の端（砲口）の、車体から見た z。</summary>
+        public const float BarrelFront = 2.8f;
 
         /// <summary>砲塔の上面の高さ。車体の上 1.5 m に、縦 0.6 を車体の 0.8 倍した 0.48 の半分を足す。</summary>
         public const float TurretTop = 1.74f;
@@ -56,6 +60,9 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
                 root.transform.localRotation = rootRotation ?? Quaternion.identity;
                 GameObject hull = Primitive(preview, PrimitiveType.Cube, "Hull", root.transform, new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
                 GameObject turret = Primitive(preview, PrimitiveType.Cube, "Turret", hull.transform, new Vector3(0f, 0.75f, 0f), new Vector3(0.6f, 0.6f, 0.4f));
+
+                // 砲身は砲塔の前の面から前へ 2 m（車体の前端より 0.8 m 前まで突き出す）。砲塔の拡大縮小（1.2, 0.48, 1.6）を打ち消した大きさ。
+                Primitive(preview, PrimitiveType.Cube, "Barrel", turret.transform, new Vector3(0f, 0f, 1.125f), new Vector3(0.125f, 0.3125f, 1.25f));
                 if (withColliders)
                 {
                     hull.AddComponent<BoxCollider>();
@@ -111,6 +118,45 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             {
                 EditorSceneManager.ClosePreviewScene(preview);
             }
+        }
+
+        /// <summary>
+        /// 砲塔と砲身を空の GameObject（ボーンの代わり）で回すモデル。砲塔と砲身の下にメッシュはなく（砲塔のメッシュはルートの下）、
+        /// 砲身の下に砲口の印（MuzzlePosition。車体から見て z = <see cref="BarrelFront"/>）がある。
+        /// </summary>
+        public GameObject CreateRiggedModel(string name = "RiggedTank")
+        {
+            Scene preview = EditorSceneManager.NewPreviewScene();
+            try
+            {
+                GameObject root = Node(preview, name, null, Vector3.zero);
+                Primitive(preview, PrimitiveType.Cube, "Hull", root.transform, new Vector3(0f, 0.9f, 0f), new Vector3(2f, 0.8f, 4f));
+                Primitive(preview, PrimitiveType.Cube, "TurretMesh", root.transform, new Vector3(0f, 1.5f, 0f), new Vector3(1.2f, 0.48f, 1.6f));
+                GameObject armature = Node(preview, "Armature", root.transform, Vector3.zero);
+                GameObject turretPivot = Node(preview, "TurretPivot", armature.transform, new Vector3(0f, 1.5f, 0f));
+                GameObject gunPivot = Node(preview, "GunPivot", turretPivot.transform, new Vector3(0f, 0f, 0.8f));
+                Node(preview, "MuzzlePosition", gunPivot.transform, new Vector3(0f, 0f, BarrelFront - 0.8f));
+                AddWheels(preview, root.transform);
+
+                string path = Folder + "/" + name + ".prefab";
+                GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
+                Object.DestroyImmediate(root);
+                return prefab;
+            }
+            finally
+            {
+                EditorSceneManager.ClosePreviewScene(preview);
+            }
+        }
+
+        /// <summary><see cref="CreateRiggedModel"/> の対応を全部埋めた設定（砲塔と砲身は空の GameObject）。</summary>
+        public YakimaTankSetupSettings CreateRiggedSettings(GameObject model, string name = "RiggedSettings")
+        {
+            YakimaTankSetupSettings settings = CreateSettings(model, name);
+            settings.turret = model.transform.Find("Armature/TurretPivot");
+            settings.barrel = model.transform.Find("Armature/TurretPivot/GunPivot");
+            EditorUtility.SetDirty(settings);
+            return settings;
         }
 
         /// <summary><see cref="CreateMeshlessParentModel"/> の対応を全部埋めた設定（砲身も対応させる）。</summary>
@@ -170,7 +216,7 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             settings.leftWheels = Children(model.transform.Find("Left"));
             settings.rightWheels = Children(model.transform.Find("Right"));
             settings.turret = model.transform.Find(TurretPath);
-            settings.barrel = null;
+            settings.barrel = model.transform.Find(BarrelPath);
             settings.outputPrefabPath = OutputPath;
             AssetDatabase.CreateAsset(settings, Folder + "/" + name + ".asset");
             return settings;

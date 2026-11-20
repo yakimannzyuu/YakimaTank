@@ -16,8 +16,9 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
     /// 生成した車両を ClientSim の中で Udon VM として動かし、走行の判定（仕様書 3 節の表）を確かめる。
     /// どの生成物で確かめるかは派生のクラスが決める（製品のテストは立方体のモデル、開発環境は実際のモデル）。
     /// 生成は Play に入る前に済ませておく。Play 中に U# の Prefab を作ると Udon に値が入らないため。
+    /// 同期のテスト（0.3.0）は同じクラスの別のファイルにある。
     /// </summary>
-    public abstract class YakimaTankDriveTestBase : ClientSimTestBase
+    public abstract partial class YakimaTankDriveTestBase : ClientSimTestBase, IPrebuildSetup, IPostBuildCleanup
     {
         private GameObject _prefab;
         private YakimaTankSetupSettings _settings;
@@ -110,12 +111,33 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             _targetFrameRate = Application.targetFrameRate;
         }
 
-        /// <summary>基底の TearDown で ClientSim を終えた後に戻す。</summary>
+        /// <summary>
+        /// 基底の TearDown で ClientSim を終えた後に、刻み幅を戻し、シーンを閉じる前に少し待つ。
+        /// ClientSim は送る要求（RequestSerialization）を、セッションをまたいで残る仕組みで 50 ミリ秒ごとにまとめて処理する。
+        /// その前にシーンを閉じて車両が消えると、次のテストの間に消えた Udon に触れて例外のログを出し、そのテストが失敗する。
+        /// </summary>
         [UnityTearDown]
         public IEnumerator RestoreTimingAfterSession()
         {
             RestoreTiming();
-            yield break;
+            // 止めてから待つ。動いたままだと、待っている間にも新しい要求が積まれる。
+            if (_vehicleRoot != null)
+            {
+                _vehicleRoot.SetActive(false);
+            }
+
+            if (_other != null)
+            {
+                _other.SetActive(false);
+            }
+
+            _other = null;
+
+            float start = Time.realtimeSinceStartup;
+            while (Time.realtimeSinceStartup - start < 0.2f)
+            {
+                yield return null;
+            }
         }
 
         /// <summary>ClientSim は始めるときに刻み幅と目標のフレームレートを変え、終えても戻さない。後のテストの刻み幅が変わらないように戻す。</summary>
@@ -290,6 +312,50 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Assert.That(Body.velocity.magnitude, Is.LessThan(0.2f));
         }
 
+        /// <summary>ジャンプの入力を座席の Udon に送る（押す・離す）。</summary>
+        private void Jump(bool pressed)
+        {
+            Part(typeof(YakimaTankSeat)).RunInputEvent(UdonManager.UDON_INPUT_JUMP,
+                new VRC.Udon.Common.UdonInputEventArgs(pressed, VRC.Udon.Common.HandType.RIGHT));
+        }
+
+        [UnityTest]
+        public IEnumerator 座ってジャンプの入力を押すと降りる()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+
+            Jump(true);
+            yield return null;
+
+            Assert.That(Flag(Part(typeof(YakimaTankSeat)), nameof(YakimaTankSeat.localSeated)), Is.False);
+            Assert.That(BoardingArea.enabled, Is.True, "降りたのに乗車の判定が戻らない");
+        }
+
+        [UnityTest]
+        public IEnumerator 座ってジャンプの入力を離しただけでは降りない()
+        {
+            yield return Place(withPlayer: true);
+            yield return Board();
+
+            Jump(false);
+            yield return null;
+
+            Assert.That(Flag(Part(typeof(YakimaTankSeat)), nameof(YakimaTankSeat.localSeated)), Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator 座っていないときにジャンプの入力を押しても座席と乗車の判定は変わらない()
+        {
+            yield return Place(withPlayer: true);
+
+            Jump(true);
+            yield return null;
+
+            Assert.That(Flag(Part(typeof(YakimaTankSeat)), nameof(YakimaTankSeat.localSeated)), Is.False);
+            Assert.That(BoardingArea.enabled, Is.True);
+        }
+
         [UnityTest]
         public IEnumerator 秒速3メートル以上で前進してから降りると入力が止まり操作値が初期値に戻り5秒以内に止まり乗車の判定が戻る()
         {
@@ -346,8 +412,8 @@ namespace Yakimannzyuu.YakimaTank.Tests.PlayMode
             Assert.That(vr.GetProgramVariable(nameof(YakimaTankVRInput.maxTwistAngle)), Is.EqualTo(30f));
             Assert.That(vr.GetProgramVariable(nameof(YakimaTankVRInput.deadzone)), Is.EqualTo(0.2f));
             Transform seatTransform = seat.transform;
-            var basePosition = (Vector3)seat.GetProgramVariable(nameof(YakimaTankSeat.basePosition));
-            Vector3 expected = seatTransform.parent.TransformPoint(basePosition) + seatTransform.rotation * offset;
+            var anchor = (Transform)seat.GetProgramVariable(nameof(YakimaTankSeat.seatAnchor));
+            Vector3 expected = anchor.position + anchor.rotation * offset;
             Assert.That(Vector3.Distance(seatTransform.position, expected), Is.LessThan(1e-3f), "座席がずらした所にない");
         }
 
