@@ -60,5 +60,48 @@ namespace Yakimannzyuu.YakimaTank.Editor
             result.SetMinMax(new Vector3(bodyBounds.min.x, bottom, bodyBounds.min.z), new Vector3(bodyBounds.max.x, top, bodyBounds.max.z));
             return result;
         }
+
+        /// <summary>
+        /// 砲塔の下にメッシュがないときの砲塔の命中用のトリガー（ルートの座標）。前後・左右は車体のコライダー、
+        /// 下は車体のコライダーの下端、上はモデル全体と車体のコライダーの上端の高い方。
+        /// </summary>
+        public static Bounds UpperHitboxBounds(Bounds bodyCollider, Bounds model)
+        {
+            var bounds = new Bounds();
+            bounds.SetMinMax(bodyCollider.min, new Vector3(bodyCollider.max.x, Mathf.Max(bodyCollider.max.y, model.max.y), bodyCollider.max.z));
+            return bounds;
+        }
+
+        /// <summary>
+        /// 使い回す砲弾の数（仕様書 0.5.0 の 1.6）。「寿命 ÷ 装填の時間」の切り上げ ＋ 1 で、2 つ以上。
+        /// 自分の撃った砲弾が飛んでいる間に、次の発射で上書きしないため。上限は設けない（装填の時間は送る間隔より長いことを検証で確かめる）。
+        /// </summary>
+        public static int ShellCount(float shellLifetime, float reloadTime)
+        {
+            if (!(reloadTime > 0f) || !(shellLifetime > 0f))
+            {
+                return 2;
+            }
+
+            return Mathf.Max(2, Mathf.CeilToInt(shellLifetime / reloadTime) + 1);
+        }
+
+        /// <summary>乗車の判定の箱を、車体のコライダーの面から外へ離す幅（m）。</summary>
+        public const float BoardingMargin = 0.05f;
+
+        /// <summary>
+        /// 乗車の判定の箱。前後・左右は車体のコライダー、上下はモデル全体と車体のコライダーを合わせた範囲を、各面 <see cref="BoardingMargin"/> 広げる。
+        /// 前後・左右をモデル全体にしないのは、砲身などで張り出した箱の中に立つと、Interact の光線が判定に当たらず車体のコライダーで止まるため。
+        /// 面を車体のコライダーと重ねないのは、光線が同じ距離で両方に当たると、どちらが先かが決まらないため。
+        /// </summary>
+        public static Bounds BoardingAreaBounds(Bounds bodyCollider, Bounds model)
+        {
+            var result = new Bounds();
+            result.SetMinMax(
+                new Vector3(bodyCollider.min.x, Mathf.Min(model.min.y, bodyCollider.min.y), bodyCollider.min.z),
+                new Vector3(bodyCollider.max.x, Mathf.Max(model.max.y, bodyCollider.max.y), bodyCollider.max.z));
+            result.Expand(BoardingMargin * 2f);
+            return result;
+        }
     }
 }

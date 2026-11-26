@@ -5,8 +5,8 @@ using VRC.SDKBase;
 namespace Yakimannzyuu.YakimaTank
 {
     /// <summary>
-    /// 乗車の判定。戦車と同じ大きさのトリガーを Interact すると、座席に座らせる。
-    /// 誰かが座っている間は判定を無効にして、戦車全体が Interact の対象として光り続けないようにする。
+    /// 乗車の判定。車体を囲むトリガーを Interact すると、座席に座らせる。
+    /// 誰かが座っている間は判定を無効にして、判定が Interact の対象として光り続けないようにする。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class YakimaTankBoarding : UdonSharpBehaviour

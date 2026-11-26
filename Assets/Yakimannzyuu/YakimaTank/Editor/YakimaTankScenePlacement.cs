@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UdonSharpEditor;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using VRC.SDKBase;
+using VRC.Udon;
 using Object = UnityEngine.Object;
 
 namespace Yakimannzyuu.YakimaTank.Editor
@@ -57,6 +59,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private const float FloorSearchBelow = 150f;
 
         private const string UdonSharpPrefabLinkPath = "serializationData.Prefab";
+        private const string SyncMethodPath = "_syncMethod";
 
         public static string ContainerName(string placementId)
         {
@@ -124,6 +127,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
                 result.Position = container.position;
                 result.Rotation = container.eulerAngles;
                 result.Changes.Add("変更なし（同じ配置 ID の車両がある。生成 Prefab の変更はインスタンスに自動で入る）");
+                RebuildRegistry(scene, result);
                 result.Succeeded = true;
                 return result;
             }
@@ -178,8 +182,15 @@ namespace Yakimannzyuu.YakimaTank.Editor
             result.Instance = instance;
             result.Position = settings.placementPosition;
             result.Rotation = settings.placementRotation;
+            RebuildRegistry(scene, result);
             result.Succeeded = true;
             return result;
+        }
+
+        /// <summary>配置のたびにシーンの車両の一覧を作り直し（同じなら書かない。手で置いた車両も入る）、型の古い車両の Network ID を外す。</summary>
+        private static void RebuildRegistry(Scene scene, PlacementResult result)
+        {
+            result.Changes.AddRange(YakimaTankSceneRegistry.Update(scene));
         }
 
         private static void CheckExisting(Transform container, GameObject prefab, YakimaTankSetupSettings settings, List<string> conflicts)
@@ -271,7 +282,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
             PropertyModification[] modifications = PrefabUtility.GetPropertyModifications(instance) ?? new PropertyModification[0];
             foreach (var modification in PrefabUtility.GetObjectOverrides(instance, false))
             {
-                if (modification.instanceObject == instance.transform || IsUdonSharpPrefabLinkOnly(modification.instanceObject, modifications))
+                if (modification.instanceObject == instance.transform || IsUdonSharpOnly(modification.instanceObject, modifications))
                 {
                     continue;
                 }
@@ -328,11 +339,24 @@ namespace Yakimannzyuu.YakimaTank.Editor
         /// UdonSharp は、Prefab のインスタンスの U# の部品に、元の部品への参照（serializationData.Prefab）を自分で記録する。
         /// 人の変更ではないので、それだけの差分は手の変更として数えない。ほかの差分が 1 つでもあれば数える。
         /// </summary>
-        private static bool IsUdonSharpPrefabLinkOnly(Object instanceObject, PropertyModification[] modifications)
+        /// <summary>
+        /// UdonSharp が自分で書く上書きだけか。U# の Prefab の参照と、スクリプトの指定に合わせて直した同期方式は、手の変更ではない。
+        /// 版を上げてスクリプトの同期方式が変わると（0.3.0 で車両の Udon を Manual にした）、U# はコンパイルのときにシーンのインスタンスの側で直す。
+        /// これを手の変更とみなすと、利用者が版を上げた後の配置が止まる。
+        /// </summary>
+        private static bool IsUdonSharpOnly(Object instanceObject, PropertyModification[] modifications)
         {
             Object source = PrefabUtility.GetCorrespondingObjectFromSource(instanceObject);
             List<PropertyModification> own = modifications.Where(m => m.target == source).ToList();
-            return own.Count > 0 && own.All(m => m.propertyPath == UdonSharpPrefabLinkPath && m.objectReference == source);
+            return own.Count > 0 && own.All(m => (m.propertyPath == UdonSharpPrefabLinkPath && m.objectReference == source) || IsScriptSyncMethod(instanceObject, m));
+        }
+
+        private static bool IsScriptSyncMethod(Object instanceObject, PropertyModification modification)
+        {
+            return modification.propertyPath == SyncMethodPath
+                   && instanceObject is UdonBehaviour udon
+                   && YakimaTankSetupService.TryGetSyncType(UdonSharpEditorUtility.GetUdonSharpBehaviourType(udon), out Networking.SyncType expected)
+                   && modification.value == ((int)expected).ToString();
         }
 
         private static string Describe(Object target)

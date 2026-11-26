@@ -20,16 +20,16 @@ namespace Yakimannzyuu.YakimaTank
         [Tooltip("グリップ・トリガーを握った（引いた）とみなす値（0〜1）")]
         public float gripThreshold = 0.5f;
 
-        [Tooltip("ねじりの最大角（度）。これだけねじると入力が端になる")]
+        [Tooltip("ねじりの最大角（度）。手の先をこれだけ左右・上下に向けると入力が端になる")]
         public float maxTwistAngle = 45f;
 
-        [Tooltip("前後の最大距離（m）。これだけ動かすと入力が端になる")]
+        [Tooltip("前後の最大距離（m。左手だけ）。これだけ動かすと入力が端になる")]
         public float maxPushDistance = 0.15f;
 
         [Tooltip("前進後退入力がこれより後ろ（-側）にある間は後退のギア")]
         public float reverseThreshold = 0.5f;
 
-        [Tooltip("ねじり・前後・トリガーを -1〜1・0〜1 にした後に掛ける不感帯")]
+        [Tooltip("向き・前後・トリガーを -1〜1・0〜1 にした後に掛ける不感帯")]
         public float deadzone = 0.1f;
 
         [Header("生成で決まる値")]
@@ -45,7 +45,6 @@ namespace Yakimannzyuu.YakimaTank
         private Vector3 _leftOrigin;
         private Quaternion _leftOriginRotation = Quaternion.identity;
         private bool _rightGripped;
-        private Vector3 _rightOrigin;
         private Quaternion _rightOriginRotation = Quaternion.identity;
 
         public void _SetActive(bool active)
@@ -83,33 +82,31 @@ namespace Yakimannzyuu.YakimaTank
             _leftGripped = leftGripped;
             _ApplyLeftHand(
                 leftGripped,
-                leftGripped ? TwistAngle(_leftOriginRotation, leftRotation) : 0f,
+                leftGripped ? YawAngle(_leftOriginRotation, leftRotation) : 0f,
                 leftGripped ? leftPosition.z - _leftOrigin.z : 0f,
                 Input.GetAxisRaw(LeftTriggerAxis));
 
             VRCPlayerApi.TrackingData right = player.GetTrackingData(VRCPlayerApi.TrackingDataType.RightHand);
-            Vector3 rightPosition = toBody * (right.position - vehicleBody.position);
             Quaternion rightRotation = toBody * right.rotation;
             bool rightGripped = IsPressed(Input.GetAxisRaw(RightGripAxis), gripThreshold);
             if (rightGripped && !_rightGripped)
             {
-                _rightOrigin = rightPosition;
                 _rightOriginRotation = rightRotation;
             }
 
             _rightGripped = rightGripped;
             _ApplyRightHand(
                 rightGripped,
-                rightGripped ? TwistAngle(_rightOriginRotation, rightRotation) : 0f,
-                rightGripped ? rightPosition.z - _rightOrigin.z : 0f,
+                rightGripped ? YawAngle(_rightOriginRotation, rightRotation) : 0f,
+                rightGripped ? PitchAngle(_rightOriginRotation, rightRotation) : 0f,
                 Input.GetAxisRaw(RightTriggerAxis));
         }
 
         /// <summary>
-        /// 左手：グリップ＋ねじりでハンドル、グリップ＋前後で前進後退入力とギア、トリガーでアクセル。
-        /// twistAngle は基準から車体の前の軸まわりに回った角度（度）、push は基準から前へ動いた距離（m）。
+        /// 左手：グリップ＋先の左右の向きでハンドル、グリップ＋前後で前進後退入力とギア、トリガーでアクセル。
+        /// yawAngle は基準から右へ向けた角度（度）、push は基準から前へ動いた距離（m）。
         /// </summary>
-        public void _ApplyLeftHand(bool gripped, float twistAngle, float push, float trigger)
+        public void _ApplyLeftHand(bool gripped, float yawAngle, float push, float trigger)
         {
             control.throttle = TriggerInput(trigger, deadzone);
             if (!gripped)
@@ -120,13 +117,16 @@ namespace Yakimannzyuu.YakimaTank
                 return;
             }
 
-            control.steering = TwistInput(twistAngle, maxTwistAngle, deadzone);
+            control.steering = AngleInput(yawAngle, maxTwistAngle, deadzone);
             control.driveAxis = PushInput(push, maxPushDistance, deadzone);
             control.gear = GearFromDriveAxis(control.driveAxis, reverseThreshold);
         }
 
-        /// <summary>右手：グリップ＋ねじりで砲の左右、グリップ＋前後で砲の上下（前で上）、トリガーで射撃。</summary>
-        public void _ApplyRightHand(bool gripped, float twistAngle, float push, float trigger)
+        /// <summary>
+        /// 右手：グリップ＋先の左右の向きで砲の左右、グリップ＋先の上下の向きで砲の上下、トリガーで射撃。
+        /// yawAngle は基準から右へ向けた角度、pitchAngle は基準から先を上げた角度（度）。
+        /// </summary>
+        public void _ApplyRightHand(bool gripped, float yawAngle, float pitchAngle, float trigger)
         {
             control.fire = IsPressed(trigger, gripThreshold);
             if (!gripped)
@@ -136,8 +136,8 @@ namespace Yakimannzyuu.YakimaTank
                 return;
             }
 
-            control.turretYawInput = TwistInput(twistAngle, maxTwistAngle, deadzone);
-            control.gunPitchInput = PushInput(push, maxPushDistance, deadzone);
+            control.turretYawInput = AngleInput(yawAngle, maxTwistAngle, deadzone);
+            control.gunPitchInput = AngleInput(pitchAngle, maxTwistAngle, deadzone);
         }
 
         public static bool IsPressed(float value, float threshold)
@@ -146,14 +146,25 @@ namespace Yakimannzyuu.YakimaTank
         }
 
         /// <summary>
-        /// 基準の向きから今の向きまでに、車体の前の軸（Z）まわりに回った角度（度、-180〜180）。
-        /// 正は、後ろから見て反時計回り（手首を左にひねる向き）。
-        /// 手のコントローラーごとの軸の違いに左右されないよう、手の軸ではなく車体の前の軸で測る。
+        /// 基準の向きから今の向きまでに、車体の上の軸（Y）まわりに回った角度（度、-180〜180）。先を右へ向けると正。
+        /// 手のコントローラーごとの軸の違いに左右されないよう、手の軸ではなく車体の軸で測る。
         /// </summary>
-        public static float TwistAngle(Quaternion origin, Quaternion current)
+        public static float YawAngle(Quaternion origin, Quaternion current)
         {
             Quaternion delta = current * Quaternion.Inverse(origin);
-            float angle = 2f * Mathf.Atan2(delta.z, delta.w) * Mathf.Rad2Deg;
+            return HalfAngleToDegrees(delta.y, delta.w);
+        }
+
+        /// <summary>基準の向きから今の向きまでに、車体の右の軸（X）まわりに回った角度（度、-180〜180）。先を上げると正。</summary>
+        public static float PitchAngle(Quaternion origin, Quaternion current)
+        {
+            Quaternion delta = current * Quaternion.Inverse(origin);
+            return -HalfAngleToDegrees(delta.x, delta.w);
+        }
+
+        private static float HalfAngleToDegrees(float axisComponent, float w)
+        {
+            float angle = 2f * Mathf.Atan2(axisComponent, w) * Mathf.Rad2Deg;
             if (angle > 180f)
             {
                 angle -= 360f;
@@ -166,15 +177,15 @@ namespace Yakimannzyuu.YakimaTank
             return angle;
         }
 
-        /// <summary>ねじりを -1〜1 にする。左にひねると負（左）。</summary>
-        public static float TwistInput(float twistAngle, float maxTwistAngle, float deadzone)
+        /// <summary>角度を最大角で -1〜1 にする（正の角度が正）。</summary>
+        public static float AngleInput(float angle, float maxAngle, float deadzone)
         {
-            if (maxTwistAngle <= 0f)
+            if (maxAngle <= 0f)
             {
                 return 0f;
             }
 
-            return ApplyDeadzone(Mathf.Clamp(-twistAngle / maxTwistAngle, -1f, 1f), deadzone);
+            return ApplyDeadzone(Mathf.Clamp(angle / maxAngle, -1f, 1f), deadzone);
         }
 
         /// <summary>前後の距離を -1〜1 にする。前へ押すと正。</summary>

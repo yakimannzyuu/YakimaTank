@@ -5,6 +5,7 @@ using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
 using VRC.SDKBase;
 using VRC.Udon;
 using Object = UnityEngine.Object;
@@ -21,6 +22,13 @@ namespace Yakimannzyuu.YakimaTank.Editor
         private const float Top = 0.6f;
         private const float LabelX = -1.15f;
         private const string BoardName = "Board";
+        private const string SyncName = "Sync";
+
+        /// <summary>同期の文字の欄の高さ（m）。7 行。</summary>
+        private const float SyncHeight = 0.9f;
+
+        /// <summary>UI の Canvas の 1 単位の大きさ（m）。文字の大きさをピクセルで決めるため。</summary>
+        private const float CanvasScale = 0.005f;
 
         private enum RowKind
         {
@@ -69,7 +77,11 @@ namespace Yakimannzyuu.YakimaTank.Editor
                     ? (YakimaTankDebugPanel)UdonSharpEditorUtility.GetProxyBehaviour(existing)
                     : UdonSharpUndo.AddComponent<YakimaTankDebugPanel>(root);
 
-                Box(root.transform, BoardName, new Vector3(-0.3f, Top - 4f * RowHeight, 0.01f), new Vector3(1.9f, Rows.Length * RowHeight + 0.1f, 0.01f), board);
+                float rowsBottom = Top - (Rows.Length - 0.5f) * RowHeight;
+                float boardTop = Top + 0.5f * RowHeight;
+                float boardBottom = rowsBottom - SyncHeight;
+                Box(root.transform, BoardName, new Vector3(-0.3f, (boardTop + boardBottom) * 0.5f, 0.01f), new Vector3(1.9f, boardTop - boardBottom + 0.1f, 0.01f), board);
+                panel.syncText = SyncText(root.transform, new Vector3(-0.3f, rowsBottom - SyncHeight * 0.5f, -0.01f), new Vector2(1.8f, SyncHeight));
                 for (int index = 0; index < Rows.Length; index++)
                 {
                     (string name, string label, RowKind kind) = Rows[index];
@@ -218,6 +230,67 @@ namespace Yakimannzyuu.YakimaTank.Editor
             mesh.color = Color.white;
             label.GetComponent<MeshRenderer>().sharedMaterial = font.material;
             return label;
+        }
+
+        /// <summary>同期の状態の文字の欄。ワールド空間の Canvas の Text（Udon が書き換えられる文字）。操作はしないので、当たり判定と UI の入力の部品は付けない。</summary>
+        private static Text SyncText(Transform parent, Vector3 position, Vector2 size)
+        {
+            RectTransform canvasRect = RectChild(parent, SyncName);
+            Canvas canvas = canvasRect.GetComponent<Canvas>();
+            if (canvas == null)
+            {
+                canvas = canvasRect.gameObject.AddComponent<Canvas>();
+            }
+
+            canvas.renderMode = RenderMode.WorldSpace;
+            canvasRect.localPosition = position;
+            canvasRect.localRotation = Quaternion.identity;
+            canvasRect.localScale = Vector3.one * CanvasScale;
+            canvasRect.sizeDelta = size / CanvasScale;
+
+            RectTransform textRect = RectChild(canvasRect, "Text");
+            Text text = textRect.GetComponent<Text>();
+            if (text == null)
+            {
+                text = textRect.gameObject.AddComponent<Text>();
+            }
+
+            textRect.anchorMin = Vector2.zero;
+            textRect.anchorMax = Vector2.one;
+            textRect.offsetMin = Vector2.zero;
+            textRect.offsetMax = Vector2.zero;
+            textRect.localPosition = Vector3.zero;
+            textRect.localRotation = Quaternion.identity;
+            textRect.localScale = Vector3.one;
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = 22;
+            text.alignment = TextAnchor.UpperLeft;
+            text.color = Color.white;
+            text.raycastTarget = false;
+            text.text = YakimaTankDebugPanel.SyncSummary(true, YakimaTankVehicleSync.NoPlayer, false, YakimaTankVehicleSync.NoPlayer, 0, -1f, 0f, 0f, 0, 0, 0, 0, 0, 0);
+            return text;
+        }
+
+        /// <summary>
+        /// UI の部品を置く子。RectTransform を後から足さない。足すと元の Transform が消え、持っていた参照が壊れた参照になる。
+        /// </summary>
+        private static RectTransform RectChild(Transform parent, string name)
+        {
+            Transform found = parent.Find(name);
+            if (found != null)
+            {
+                var existing = found.GetComponent<RectTransform>();
+                if (existing != null)
+                {
+                    return existing;
+                }
+
+                Object.DestroyImmediate(found.gameObject);
+            }
+
+            var created = new GameObject(name, typeof(RectTransform));
+            created.transform.SetParent(parent, false);
+            return (RectTransform)created.transform;
         }
 
         private static Material EnsureMaterial(string folder, string name, Color color)

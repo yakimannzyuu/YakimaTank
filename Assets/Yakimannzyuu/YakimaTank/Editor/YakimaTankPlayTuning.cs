@@ -30,9 +30,9 @@ namespace Yakimannzyuu.YakimaTank.Editor
         /// <summary>車両と、その座席・VR の入力に値を書き、座席のずらしを入れ直す。</summary>
         private static void WriteAll(YakimaTankSetupSettings values, GameObject root)
         {
-            foreach (var group in YakimaTankRuntimeValues.Groups)
+            foreach (Type receiver in YakimaTankRuntimeValues.Receivers)
             {
-                UdonBehaviour target = YakimaTankRuntimeValues.FindBehaviour(root, group.Key);
+                UdonBehaviour target = YakimaTankRuntimeValues.FindBehaviour(root, receiver);
                 if (target != null)
                 {
                     YakimaTankRuntimeValues.WriteToUdon(values, target);

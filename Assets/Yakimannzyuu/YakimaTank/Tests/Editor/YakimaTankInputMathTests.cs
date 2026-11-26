@@ -119,24 +119,65 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
             Assert.That(YakimaTankVRInput.ApplyDeadzone(value, deadzone), Is.EqualTo(expected).Within(Tolerance));
         }
 
+        [TestCase(0f, 90f, 0f)]
+        [TestCase(20f, -60f, 15f)]
+        public void 左右の向きは基準から車体の上の軸まわりに回った角度で右へ向けると正(float originX, float originY, float originZ)
+        {
+            Quaternion origin = Quaternion.Euler(originX, originY, originZ);
+
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, 30f, 0f) * origin), Is.EqualTo(30f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, -30f, 0f) * origin), Is.EqualTo(-30f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, 170f, 0f) * origin), Is.EqualTo(170f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(30f, 0f, 0f) * origin), Is.EqualTo(0f).Within(0.01f), "上下に向けただけでは左右の向きにならない");
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, 0f, 30f) * origin), Is.EqualTo(0f).Within(0.01f), "手首をひねっただけでは左右の向きにならない");
+        }
+
+        [TestCase(0f, 90f, 0f)]
+        [TestCase(20f, -60f, 15f)]
+        public void 上下の向きは基準から車体の右の軸まわりに回った角度で先を上げると正(float originX, float originY, float originZ)
+        {
+            Quaternion origin = Quaternion.Euler(originX, originY, originZ);
+
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(-30f, 0f, 0f) * origin), Is.EqualTo(30f).Within(0.01f), "Unity の X 軸の正は先を下げる向き");
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(30f, 0f, 0f) * origin), Is.EqualTo(-30f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(0f, 30f, 0f) * origin), Is.EqualTo(0f).Within(0.01f), "左右に向けただけでは上下の向きにならない");
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(0f, 0f, 30f) * origin), Is.EqualTo(0f).Within(0.01f), "手首をひねっただけでは上下の向きにならない");
+        }
+
         [Test]
-        public void ねじりは基準から車体の前の軸まわりに回った角度()
+        public void 左右と上下の向きは180度を超えると反対側の角度に折り返す()
         {
             Quaternion origin = Quaternion.Euler(0f, 90f, 0f);
 
-            Assert.That(YakimaTankVRInput.TwistAngle(origin, Quaternion.Euler(0f, 0f, 30f) * origin), Is.EqualTo(30f).Within(0.01f));
-            Assert.That(YakimaTankVRInput.TwistAngle(origin, Quaternion.Euler(0f, 0f, -30f) * origin), Is.EqualTo(-30f).Within(0.01f));
-            Assert.That(YakimaTankVRInput.TwistAngle(origin, Quaternion.Euler(30f, 0f, 0f) * origin), Is.EqualTo(0f).Within(0.01f), "前後に傾けただけではねじりにならない");
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, 190f, 0f) * origin), Is.EqualTo(-170f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.YawAngle(origin, Quaternion.Euler(0f, -190f, 0f) * origin), Is.EqualTo(170f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(-190f, 0f, 0f) * origin), Is.EqualTo(-170f).Within(0.01f));
+            Assert.That(YakimaTankVRInput.PitchAngle(origin, Quaternion.Euler(190f, 0f, 0f) * origin), Is.EqualTo(170f).Within(0.01f));
         }
 
-        [TestCase(22.5f, 45f, 0f, -0.5f)]
-        [TestCase(-45f, 45f, 0f, 1f)]
-        [TestCase(-90f, 45f, 0f, 1f)]
-        [TestCase(90f, 45f, 0f, -1f)]
-        [TestCase(2f, 45f, 0.1f, 0f)]
-        public void ねじりを最大角で1にして左へひねると負にする(float twist, float max, float deadzone, float expected)
+        [Test]
+        public void 斜めに向けても左右と上下の向きはそれぞれの角度になる()
         {
-            Assert.That(YakimaTankVRInput.TwistInput(twist, max, deadzone), Is.EqualTo(expected).Within(Tolerance));
+            Quaternion origin = Quaternion.Euler(20f, -60f, 15f);
+            Quaternion yawThenPitch = Quaternion.Euler(0f, 30f, 0f) * Quaternion.Euler(-20f, 0f, 0f);
+            Quaternion pitchThenYaw = Quaternion.Euler(-20f, 0f, 0f) * Quaternion.Euler(0f, 30f, 0f);
+
+            foreach (Quaternion turn in new[] { yawThenPitch, pitchThenYaw })
+            {
+                Assert.That(YakimaTankVRInput.YawAngle(origin, turn * origin), Is.EqualTo(30f).Within(0.01f));
+                Assert.That(YakimaTankVRInput.PitchAngle(origin, turn * origin), Is.EqualTo(20f).Within(0.01f));
+            }
+        }
+
+        [TestCase(22.5f, 45f, 0f, 0.5f)]
+        [TestCase(-45f, 45f, 0f, -1f)]
+        [TestCase(-90f, 45f, 0f, -1f)]
+        [TestCase(90f, 45f, 0f, 1f)]
+        [TestCase(2f, 45f, 0.1f, 0f)]
+        [TestCase(30f, 0f, 0f, 0f)]
+        public void 角度を最大角で1にして正の向きを正にする(float angle, float max, float deadzone, float expected)
+        {
+            Assert.That(YakimaTankVRInput.AngleInput(angle, max, deadzone), Is.EqualTo(expected).Within(Tolerance));
         }
 
         [TestCase(0.15f, 0.15f, 0f, 1f)]
@@ -174,14 +215,14 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
-        public void 左手はグリップ中のねじりと前後でハンドルと後退を決めトリガーでアクセル()
+        public void 左手はグリップ中の左右の向きと前後でハンドルと後退を決めトリガーでアクセル()
         {
             YakimaTankVRInput input = VRInput();
             input.deadzone = 0f;
 
             input._ApplyLeftHand(true, 45f, -0.15f, 1f);
 
-            Assert.That(_control.steering, Is.EqualTo(-1f).Within(Tolerance));
+            Assert.That(_control.steering, Is.EqualTo(1f).Within(Tolerance), "右へ向けると右旋回");
             Assert.That(_control.driveAxis, Is.EqualTo(-1f).Within(Tolerance));
             Assert.That(_control.gear, Is.EqualTo(YakimaTankControlState.GearReverse));
             Assert.That(_control.throttle, Is.EqualTo(1f).Within(Tolerance));
@@ -202,17 +243,21 @@ namespace Yakimannzyuu.YakimaTank.Editor.Tests
         }
 
         [Test]
-        public void 右手はグリップ中のねじりと前後で砲の入力を決めトリガーで射撃()
+        public void 右手はグリップ中の左右と上下の向きで砲の入力を決めトリガーで射撃()
         {
             YakimaTankVRInput input = VRInput();
             input.deadzone = 0f;
 
-            input._ApplyRightHand(true, -45f, 0.15f, 0.8f);
-            Assert.That(_control.turretYawInput, Is.EqualTo(1f).Within(Tolerance));
-            Assert.That(_control.gunPitchInput, Is.EqualTo(1f).Within(Tolerance));
+            input._ApplyRightHand(true, 45f, -22.5f, 0.8f);
+            Assert.That(_control.turretYawInput, Is.EqualTo(1f).Within(Tolerance), "右へ向けると右へ回る");
+            Assert.That(_control.gunPitchInput, Is.EqualTo(-0.5f).Within(Tolerance), "先を下げると下へ回る");
             Assert.That(_control.fire, Is.True);
 
-            input._ApplyRightHand(false, -45f, 0.15f, 0f);
+            input._ApplyRightHand(true, -22.5f, 45f, 0f);
+            Assert.That(_control.turretYawInput, Is.EqualTo(-0.5f).Within(Tolerance));
+            Assert.That(_control.gunPitchInput, Is.EqualTo(1f).Within(Tolerance), "先を上げると上へ回る");
+
+            input._ApplyRightHand(false, 45f, 45f, 0f);
             Assert.That(_control.turretYawInput, Is.EqualTo(0f));
             Assert.That(_control.gunPitchInput, Is.EqualTo(0f));
             Assert.That(_control.fire, Is.False);

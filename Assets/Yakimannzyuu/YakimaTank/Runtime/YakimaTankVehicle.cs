@@ -7,14 +7,22 @@ namespace Yakimannzyuu.YakimaTank
     /// <summary>
     /// 戦車の走行。値はセットアップの生成と、Play 中の再適用（SetProgramVariable）で Editor から書く。
     /// 実行中に設定アセットは読まない（Udon から ScriptableObject は読めない）。
+    /// 物理を計算するのはオーナーの画面だけ（同期の Udon が hasAuthority を切り替える）。車両同士の接触の速度の変化は、同期の Udon が求める。
+    /// Manual にするのは、同じ GameObject の同期の Udon と同期の方式をそろえるため。同期変数は持たない。
     /// </summary>
-    [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
+    [UdonBehaviourSyncMode(BehaviourSyncMode.Manual)]
     public class YakimaTankVehicle : UdonSharpBehaviour
     {
         private const float InputDeadZone = 0.01f;
 
         /// <summary>これより速く逆へ動いている間は、入力の向きに駆動せずに止める。</summary>
         private const float OpposingSpeed = 0.5f;
+
+        /// <summary>
+        /// 押されている間、車輪の張り付きを外すために掛ける、転輪 1 つあたりの駆動のトルク（N·m）。
+        /// 車体を動かす力にはならない大きさ。張り付きは、駆動のトルクが 0 でなければ外れる（0.4.0 の実装の最初の確かめ）。
+        /// </summary>
+        public const float ReleaseTorque = 1f;
 
         [Header("走行（Play 中に再適用できる）")]
         public float mass = 20000f;
@@ -37,8 +45,17 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>自分が座っている間、物理の更新ごとに読む共通操作値。</summary>
         public YakimaTankControlState control;
 
+        /// <summary>最初の位置に戻したことを伝える同期の Udon。</summary>
+        public YakimaTankVehicleSync sync;
+
+        /// <summary>生存の状態。破壊の間は入力を受けず、停止中のブレーキで止める。</summary>
+        public YakimaTankLife life;
+
         [Header("状態（実行中に変わる）")]
         public bool isReady;
+
+        /// <summary>自分の画面で物理を計算してよい（オーナー）。外すと、入力を受けず、走行の物理の更新もしない。</summary>
+        public bool hasAuthority = true;
         public int generation;
 
         /// <summary>自分（ローカルのプレイヤー）が座席に座っている。座席が書く。</summary>
@@ -55,6 +72,9 @@ namespace Yakimannzyuu.YakimaTank
         public Vector3 spawnPosition;
         public Quaternion spawnRotation;
 
+        /// <summary>転輪の半径の平均（m）。押されている間のブレーキの減速を求める。</summary>
+        public float wheelRadius;
+
         private void Start()
         {
             if (applyOnStart)
@@ -66,6 +86,11 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>入力。throttle と steer は -1〜1、brake は 0〜1 に丸める。steer が正なら右へ回る。</summary>
         public void SetDriveInput(float throttle, float steer, float brake)
         {
+            if (!hasAuthority)
+            {
+                return;
+            }
+
             throttleInput = Mathf.Clamp(throttle, -1f, 1f);
             steerInput = Mathf.Clamp(steer, -1f, 1f);
             brakeInput = Mathf.Clamp01(brake);
@@ -84,10 +109,40 @@ namespace Yakimannzyuu.YakimaTank
             }
         }
 
+        /// <summary>同期の Udon から呼ぶ。外したら入力と旋回の速さを 0 にし、転輪の駆動を外す。</summary>
+        public void _SetAuthority(bool value)
+        {
+            hasAuthority = value;
+            if (!value)
+            {
+                throttleInput = 0f;
+                steerInput = 0f;
+                brakeInput = 0f;
+                turnRate = 0f;
+                _ReleaseWheels(leftWheels);
+                _ReleaseWheels(rightWheels);
+            }
+        }
+
         /// <summary>
         /// 設定を入れ直し、最初の位置に戻す。Start に頼らずに呼べる（Play 中の再適用・出し直しから呼ぶ）。
+        /// オーナー以外では値だけを入れ、位置は同期に従う。
         /// </summary>
         public void _ApplySettingsAndReset()
+        {
+            _Initialize();
+        }
+
+        /// <summary>
+        /// ゲームの中の復活（仕様書 0.6.0 の 1.3）。生存の状態のオーナー（車体のオーナー）が呼ぶ。
+        /// Editor の「最初の位置に戻す」と入口を分け、中の初期化だけを共用する（車体の世代が進み、ほかの人の画面で補間せずに置かれる）。
+        /// </summary>
+        public void _Respawn()
+        {
+            _Initialize();
+        }
+
+        private void _Initialize()
         {
             isReady = false;
             generation++;
@@ -113,32 +168,69 @@ namespace Yakimannzyuu.YakimaTank
 
             body.mass = mass;
             body.centerOfMass = baseCenterOfMass + centerOfMassOffset;
-            _StopBody();
-            body.transform.SetPositionAndRotation(spawnPosition, spawnRotation);
-            body.position = spawnPosition;
-            body.rotation = spawnRotation;
+            wheelRadius = (_SumRadius(leftWheels) + _SumRadius(rightWheels)) / (leftWheels.Length + rightWheels.Length);
             _ReleaseWheels(leftWheels);
             _ReleaseWheels(rightWheels);
             isReady = true;
-        }
-
-        private void FixedUpdate()
-        {
-            if (!isReady)
+            if (!hasAuthority)
             {
                 return;
             }
 
-            if (localDriverSeated && Utilities.IsValid(control))
+            _StopBody();
+            body.transform.SetPositionAndRotation(spawnPosition, spawnRotation);
+            body.position = spawnPosition;
+            body.rotation = spawnRotation;
+            if (Utilities.IsValid(sync))
+            {
+                sync._OnVehicleReset();
+            }
+        }
+
+        private void FixedUpdate()
+        {
+            if (!isReady || !hasAuthority)
+            {
+                return;
+            }
+
+            // 車両同士の接触は速度だけを直す。走行は角速度と転輪のトルクを書くので上書きし合わない。
+            // 接地していないと下で抜けるので、その前に足す。
+            Vector3 push = Vector3.zero;
+            if (Utilities.IsValid(sync))
+            {
+                body.velocity = body.velocity + sync._ContactVelocityChange();
+                push = sync.contactPush;
+            }
+
+            if (Utilities.IsValid(life) && life._IsDestroyed())
+            {
+                // 破壊の間は入力を止め、停止中のブレーキにする（直接の SetDriveInput も上書きする）。
+                SetDriveInput(0f, 0f, 0f);
+            }
+            else if (localDriverSeated && Utilities.IsValid(control))
             {
                 SetDriveInput(ControlThrottle(control.throttle, control.gear), control.steering, control.brake);
             }
 
             Transform bodyTransform = body.transform;
-            float forwardSpeed = Vector3.Dot(body.velocity, bodyTransform.forward);
+            Vector3 forward = bodyTransform.forward;
+            float forwardSpeed = Vector3.Dot(body.velocity, forward);
             int wheelCount = leftWheels.Length + rightWheels.Length;
             float motor = CalculateDriveTorque(throttleInput, forwardSpeed, driveTorque, maxForwardSpeed, maxReverseSpeed) / wheelCount;
-            float brake = CalculateBrakeTorque(throttleInput, steerInput, brakeInput, forwardSpeed, brakeTorque, idleBrakeTorque) / wheelCount;
+            float brakeTotal = CalculateBrakeTorque(throttleInput, steerInput, brakeInput, forwardSpeed, brakeTorque, idleBrakeTorque);
+            float brake = brakeTotal / wheelCount;
+            float pushAlong = Vector3.Dot(push, forward);
+            float deceleration = BrakeDeceleration(brakeTotal, wheelRadius, body.mass);
+            if (ReleasesForPush(pushAlong, deceleration, motor != 0f))
+            {
+                // 押されている間は、ブレーキを外し、わずかな駆動のトルクで車輪の張り付きを外して、ブレーキの減速を速度で掛ける。
+                // 押す加速の上限を上げてはがす案は採らない。張り付きは 1 ステップの速度の変化が大きいときだけはがれ、はがれると抵抗がなく飛ぶ。
+                motor = pushAlong > 0f ? ReleaseTorque : -ReleaseTorque;
+                brake = 0f;
+                body.velocity = body.velocity + forward * (ApplyBrake(forwardSpeed, deceleration, Time.fixedDeltaTime) - forwardSpeed);
+            }
+
             bool leftGrounded = _DriveWheels(leftWheels, motor, brake);
             bool rightGrounded = _DriveWheels(rightWheels, motor, brake);
             if (!leftGrounded && !rightGrounded)
@@ -219,6 +311,28 @@ namespace Yakimannzyuu.YakimaTank
             return Mathf.MoveTowards(currentYawRate, target, turnAcceleration * deltaTime);
         }
 
+        /// <summary>ブレーキのトルク（全部の転輪の合計）で止める減速（m/s²）。</summary>
+        public static float BrakeDeceleration(float brakeTorque, float wheelRadius, float mass)
+        {
+            return wheelRadius > 0f && mass > 0f ? brakeTorque / wheelRadius / mass : 0f;
+        }
+
+        /// <summary>
+        /// 車両同士の接触で押されている間、車輪の張り付きを外すか（仕様書 0.4.0 の 1.5）。
+        /// 駆動していない車輪は、低速でブレーキのトルクに関係なくその場に張り付く（WheelCollider）。押す加速の前後の分が、
+        /// ブレーキの減速を超えている間だけ外す。横はタイヤの横の摩擦で受けるので見ない。
+        /// </summary>
+        public static bool ReleasesForPush(float pushAlong, float brakeDeceleration, bool driven)
+        {
+            return !driven && Mathf.Abs(pushAlong) > brakeDeceleration;
+        }
+
+        /// <summary>張り付きを外している間の、ブレーキの代わりの減速。</summary>
+        public static float ApplyBrake(float speedAlong, float deceleration, float deltaTime)
+        {
+            return Mathf.MoveTowards(speedAlong, 0f, deceleration * deltaTime);
+        }
+
         private bool _DriveWheels(WheelCollider[] wheels, float motor, float brake)
         {
             bool grounded = false;
@@ -234,6 +348,17 @@ namespace Yakimannzyuu.YakimaTank
             }
 
             return grounded;
+        }
+
+        private float _SumRadius(WheelCollider[] wheels)
+        {
+            float sum = 0f;
+            for (int index = 0; index < wheels.Length; index++)
+            {
+                sum += wheels[index].radius;
+            }
+
+            return sum;
         }
 
         /// <summary>設定の検証に失敗したときも呼ぶので、足りない参照は飛ばして、外せる転輪だけ外す。</summary>
