@@ -6,7 +6,7 @@ namespace Yakimannzyuu.YakimaTank
 {
     /// <summary>
     /// Desktop の入力アダプター。座席が有効にしている間だけ、キーと視点を共通操作値に書く。
-    /// 降車（Space）は VRCStation の標準に任せる。
+    /// 降車（Space）は座席が受ける（VRCStation の標準の降り方は止めてある）。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class YakimaTankDesktopInput : UdonSharpBehaviour
