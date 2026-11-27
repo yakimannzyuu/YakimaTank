@@ -29,7 +29,7 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>1 前進・-1 後退。</summary>
         public int gear = GearForward;
 
-        /// <summary>ブレーキ。0〜1。この版では値だけ。</summary>
+        /// <summary>ブレーキ。0〜1。走行が読む。この版では、値を入れる入力はない（いつも 0）。</summary>
         public float brake;
 
         /// <summary>砲の左右入力。-1〜1、正で右。武器が読む（Desktop は目標の角度、VR は回す速さの割合）。</summary>
