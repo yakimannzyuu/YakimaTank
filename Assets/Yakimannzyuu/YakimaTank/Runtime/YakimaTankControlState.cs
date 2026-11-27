@@ -32,13 +32,13 @@ namespace Yakimannzyuu.YakimaTank
         /// <summary>ブレーキ。0〜1。この版では値だけ。</summary>
         public float brake;
 
-        /// <summary>砲の左右入力。-1〜1、正で右。この版では表示だけ。</summary>
+        /// <summary>砲の左右入力。-1〜1、正で右。武器が読む（Desktop は目標の角度、VR は回す速さの割合）。</summary>
         public float turretYawInput;
 
-        /// <summary>砲の上下入力。-1〜1、正で上。この版では表示だけ。</summary>
+        /// <summary>砲の上下入力。-1〜1、正で上。武器が読む（Desktop は目標の角度、VR は回す速さの割合）。</summary>
         public float gunPitchInput;
 
-        /// <summary>射撃。押している間 true。この版では表示だけ。</summary>
+        /// <summary>射撃。押している間 true。武器が読む（押し続けても装填ごとに 1 発）。</summary>
         public bool fire;
 
         /// <summary>降りたときの初期値に戻す。</summary>

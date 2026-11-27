@@ -6,7 +6,7 @@ namespace Yakimannzyuu.YakimaTank
 {
     /// <summary>
     /// VR の入力アダプター。左手で走行、右手で砲と射撃。座席が有効にしている間だけ書く。
-    /// 手の位置と向きは車体から見た値で扱い、グリップを握った瞬間の手を基準にする。降車（ジャンプ）は VRCStation の標準に任せる。
+    /// 手の位置と向きは車体から見た値で扱い、グリップを握った瞬間の手を基準にする。降車（ジャンプ）は座席が受ける（VRCStation の標準の降り方は止めてある）。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class YakimaTankVRInput : UdonSharpBehaviour

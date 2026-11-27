@@ -42,7 +42,7 @@ namespace Yakimannzyuu.YakimaTank.Editor
         public Vector3 centerOfMassOffset;
 
         [Header("座席（Play 中に再適用できる）")]
-        [Tooltip("砲塔の範囲の上面の中央（自動の位置）から、車体から見た向きでずらす量（m）")]
+        [Tooltip("砲塔の範囲の上面の中央（自動の位置）から、砲塔から見た向きでずらす量（m）。砲塔が回ると、ずらした位置も一緒に回る")]
         public Vector3 seatOffset;
 
         [Header("操作（VR。Play 中に再適用できる）")]
